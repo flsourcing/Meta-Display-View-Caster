@@ -65,16 +65,6 @@ final class RelayViewModel: ObservableObject {
         wearables.configure(configError: configError)
     }
 
-    func fixMetaDevMode() {
-        MetaAIDeepLink.openMetaAI()
-        metaHint = """
-        In Meta AI: Settings → App Info → tap version 7× → Developer Mode ON.
-        Toggle Developer Mode OFF then ON. Tap Install next to your glasses if shown.
-        Then return here and tap Connect Meta AI.
-        Live Stream already works via phone camera without this step.
-        """
-    }
-
     func applyServerURL() {
         UserDefaults.standard.set(serverURLString, forKey: "signalingServerURL")
         guard let url = URL(string: serverURLString.trimmingCharacters(in: .whitespaces)) else { return }
@@ -118,27 +108,8 @@ final class RelayViewModel: ObservableObject {
             metaHint = issue
             return
         }
-        metaHint = """
-        \(SigningInfo.developerModeHint)
-        In Meta AI you should see a prompt to connect View Caster Relay.
-        When Meta AI finishes, tap Open to return here — do not swipe back via the app switcher.
-        Meta state must show registered and at least 1 glasses detected before Live Stream works.
-        """
+        metaHint = ""
         wearables.connectMetaAI()
-    }
-
-    func resetMetaConnection() {
-        wearables.resetMetaConnection()
-        metaHint = "Disconnect View Caster in Meta AI if listed, then tap Connect Meta AI again."
-    }
-
-    func clearLocalMetaState() {
-        wearables.clearLocalMetaState()
-        metaHint = "Local Meta steps reset. Tap Connect Meta AI."
-    }
-
-    func refreshMetaConnection() {
-        Task { await wearables.refreshAfterForeground() }
     }
 
     func copyTeamIdForPatch() {
@@ -157,36 +128,10 @@ final class RelayViewModel: ObservableObject {
     }
 
     func allowGlassesCamera() {
+        metaHint = ""
         Task {
             await wearables.requestGlassesCamera()
         }
-    }
-
-    func syncMetaStatus() {
-        Task { await wearables.refreshAfterForeground() }
-    }
-
-    func userConfirmMetaConnected() {
-        wearables.userConfirmMetaConnected()
-    }
-
-    func userConfirmCameraAllowed() {
-        wearables.userConfirmCameraAllowed()
-    }
-
-    func connectMetaAIWebApp() {
-        UIPasteboard.general.string = Self.glassesURL
-        metaHint = "Glasses web app URL copied. Also try Open Meta AI → Web Apps, or use the button below."
-    }
-
-    func openMetaAIApp() {
-        MetaAIDeepLink.openMetaAI()
-        metaHint = "Opened Meta AI. Check App connections → Developer mode apps (native) vs Web Apps (digit pad)."
-    }
-
-    func openMetaAIAddWebApp() {
-        MetaAIDeepLink.openAddWebApp(name: "View Caster", url: Self.glassesURL)
-        metaHint = "Opening Meta AI to add the glasses web app (https URL)."
     }
 
     func handleMetaCallback(_ url: URL) async {
@@ -224,12 +169,6 @@ final class RelayViewModel: ObservableObject {
         guard backgroundTaskID != .invalid else { return }
         UIApplication.shared.endBackgroundTask(backgroundTaskID)
         backgroundTaskID = .invalid
-    }
-
-    func finishedMetaAISetup() {
-        wearables.markMetaSetupStarted()
-        Task { await wearables.refreshAfterForeground() }
-        metaHint = "Step 2 enabled. Tap Allow glasses camera."
     }
 
     private func beginGlassesCast() async {
@@ -300,10 +239,6 @@ struct ContentView: View {
                     Text("View Caster Relay")
                         .font(.title2.bold())
 
-                    Text("Glasses camera (native)")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
                     Text(model.signaling.code)
                         .font(.system(size: 44, weight: .bold, design: .monospaced))
                         .tracking(4)
@@ -356,158 +291,38 @@ struct ContentView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Meta setup")
-                            .font(.caption.bold())
-                            .foregroundStyle(.secondary)
-                        Text("Bundle: \(SigningInfo.bundleIdentifier)")
-                            .font(.caption.monospaced())
-                        Text("IPA Team: \(SigningInfo.configuredMWTeamID ?? "missing")")
-                            .font(.caption.monospaced())
-                        Text("ClientToken: \(SigningInfo.clientTokenLabel)")
-                            .font(.caption.monospaced())
-                        Text("DAMEnabled: \(SigningInfo.damEnabledLabel)")
-                            .font(.caption.monospaced())
-                        Text("SDK: \(model.wearables.sdkConfigureNote)")
-                            .font(.caption.monospaced())
-                        Text("Sideload Team: \(SigningInfo.embeddedTeamIdentifier ?? "unknown")")
-                            .font(.caption.monospaced())
-                        Text("Meta state: \(model.wearables.registrationStateName)")
-                            .font(.caption.monospaced())
-                        Text(model.wearables.glassesDevicesLabel)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(model.wearables.glassesDeviceCount > 0 ? Color.green : Color.orange)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-                    .background(Color(.secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Meta Glasses Camera")
+                            .font(.headline)
 
-
-                    if !model.wearables.sdkRegistered {
-                        Text("Live Stream works now via phone camera — Meta registration below is only needed for true glasses POV.")
-                            .font(.footnote)
-                            .foregroundStyle(.green)
-                            .multilineTextAlignment(.center)
-                            .padding(10)
-                            .background(Color(.secondarySystemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-
-                    if !model.wearables.sdkRegistered && model.wearables.registrationStateName.contains("unavailable") {
-                        Text("Web app connected in Meta AI ≠ native relay registered. Enable phone dev mode (App Info → tap version 5×) AND glasses dev mode, then Connect Meta AI below.")
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
-                            .multilineTextAlignment(.center)
-                            .padding(10)
-                            .background(Color(.secondarySystemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-
-                    Group {
-                        Label(model.wearables.sdkRegistered ? "1. Meta AI connected" : "1. Connect Meta AI",
-                              systemImage: model.wearables.sdkRegistered ? "checkmark.circle.fill" : "circle")
-
-                        Button("1. Connect Meta AI") {
+                        MetaSetupStepView(
+                            title: "Register with Meta AI",
+                            statusLabel: model.wearables.sdkRegistered ? "Successful" : "Waiting for connection...",
+                            isSuccess: model.wearables.sdkRegistered,
+                            buttonTitle: "Register With Meta AI",
+                            buttonIcon: "link",
+                            hint: "Complete registration in Meta AI, then return here. Next unlocks when connected.",
+                            disabled: model.wearables.sdkRegistered || model.metaBlocked
+                        ) {
                             model.connectMetaAI()
                         }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(model.wearables.sdkRegistered || model.metaBlocked)
 
-                        Text(model.wearables.registrationLabel)
-                            .font(.footnote)
-                            .foregroundStyle(model.wearables.isRegistered ? .green : .secondary)
-                            .multilineTextAlignment(.center)
-
-                        if !model.wearables.sdkRegistered {
-                            Button("Meta AI shows connected — tap here") {
-                                model.userConfirmMetaConnected()
-                            }
-                            .font(.footnote)
-                            .buttonStyle(.borderedProminent)
-                            .tint(.green)
-                        }
-
-                        Label(model.wearables.cameraGranted ? "2. Glasses camera allowed" : "2. Allow glasses camera",
-                              systemImage: model.wearables.cameraGranted ? "checkmark.circle.fill" : "circle")
-
-                        Button("2. Allow glasses camera") {
+                        MetaSetupStepView(
+                            title: "Allow Camera",
+                            statusLabel: model.wearables.cameraGranted ? "Successful" : "Waiting for approval...",
+                            isSuccess: model.wearables.cameraGranted,
+                            buttonTitle: "Allow Camera",
+                            buttonIcon: "camera.badge.ellipsis",
+                            hint: "Approve camera access in Meta AI, then return here. Next unlocks when allowed.",
+                            disabled: model.metaBlocked || model.wearables.cameraGranted
+                        ) {
                             model.allowGlassesCamera()
                         }
-                        .buttonStyle(.bordered)
-                        .disabled(model.metaBlocked || model.wearables.cameraGranted
-                                  || !model.wearables.isRegistered && !model.wearables.metaSetupStarted)
-
-                        Text(model.wearables.cameraLabel)
-                            .font(.footnote)
-                            .foregroundStyle(model.wearables.cameraGranted ? .green : .secondary)
-                            .multilineTextAlignment(.center)
-
-                        if !model.wearables.cameraGranted {
-                            Button("Camera allowed in Meta AI — tap here") {
-                                model.userConfirmCameraAllowed()
-                            }
-                            .font(.footnote)
-                            .buttonStyle(.borderedProminent)
-                            .tint(.green)
-                        }
-
-                        if !model.wearables.lastMetaSyncNote.isEmpty {
-                            Text(model.wearables.lastMetaSyncNote)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-
-                        if !model.wearables.lastMetaCallback.isEmpty {
-                            Text("Last callback: \(model.wearables.lastMetaCallback)")
-                                .font(.caption2.monospaced())
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-
-                        Text(RelayViewModel.glassesURL)
-                            .font(.caption2.monospaced())
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .textSelection(.enabled)
-
-                        Button("Fix dev mode in Meta AI") {
-                            model.fixMetaDevMode()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.orange)
-
-                        Button("Open Meta AI") {
-                            model.openMetaAIApp()
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("Add glasses web app (digit pad)") {
-                            model.openMetaAIAddWebApp()
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("Copy glasses web URL") {
-                            model.connectMetaAIWebApp()
-                        }
-                        .font(.footnote)
-
-                        Button("Sync Meta status") {
-                            model.syncMetaStatus()
-                        }
-                        .font(.footnote)
-
-                        Button("Reset Meta connection") {
-                            model.resetMetaConnection()
-                        }
-                        .font(.footnote)
-
-                        Button("Clear local Meta steps") {
-                            model.clearLocalMetaState()
-                        }
-                        .font(.footnote)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
 
                     if !model.metaHint.isEmpty {
                         Text(model.metaHint)
@@ -532,11 +347,6 @@ struct ContentView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-
-                    Text("Live Stream uses phone camera when Meta SDK is unavailable.\nGlasses POV needs Meta state = registered.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
 
                     Text("Keep this app open on the pairing code while entering the code on glasses & desktop.")
                         .font(.footnote)
@@ -565,6 +375,44 @@ struct ContentView: View {
                     break
                 }
             }
+        }
+    }
+}
+
+private struct MetaSetupStepView: View {
+    let title: String
+    let statusLabel: String
+    let isSuccess: Bool
+    let buttonTitle: String
+    let buttonIcon: String
+    let hint: String
+    let disabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(isSuccess ? Color.green : Color.orange)
+                    .frame(width: 10, height: 10)
+                Text(statusLabel)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isSuccess ? .green : .orange)
+            }
+
+            Button(action: action) {
+                Label(buttonTitle, systemImage: buttonIcon)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(disabled)
+
+            Text(hint)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 }
