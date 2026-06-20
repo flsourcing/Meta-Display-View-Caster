@@ -16,6 +16,7 @@ final class RelayViewModel: ObservableObject {
 
     private lazy var webrtc = WebRTCManager()
     private let phoneCamera = PhoneCameraManager()
+    private var castTask: Task<Void, Never>?
     private var subs = Set<AnyCancellable>()
 
     init() {
@@ -47,9 +48,9 @@ final class RelayViewModel: ObservableObject {
             }
         }
         signaling.onStopStream = { [weak self] in
-            self?.phoneCamera.stop()
-            self?.wearables.stopGlassesStream()
-            self?.webrtc.stopStream()
+            Task { @MainActor in
+                self?.cancelCast()
+            }
         }
         signaling.onAnswer = { [weak self] sdp in
             self?.webrtc.handleAnswer(sdp)
@@ -60,6 +61,7 @@ final class RelayViewModel: ObservableObject {
     }
 
     func configureWearables(configError: String? = nil) {
+        webrtc.prepareFactory()
         wearables.configure(configError: configError)
     }
 
@@ -86,10 +88,20 @@ final class RelayViewModel: ObservableObject {
     }
 
     func stop() {
+        cancelCast()
+        signaling.disconnectAndClearSession()
+    }
+
+    private func stopCast() {
         phoneCamera.stop()
         wearables.stopGlassesStream()
         webrtc.stopStream()
-        signaling.disconnectAndClearSession()
+    }
+
+    private func cancelCast() {
+        castTask?.cancel()
+        castTask = nil
+        stopCast()
     }
 
     func restartRelay() {
@@ -221,14 +233,29 @@ final class RelayViewModel: ObservableObject {
     }
 
     private func beginGlassesCast() async {
-        signaling.status = "Starting camera…"
+        if castTask != nil {
+            signaling.status = "Cast already starting…"
+            return
+        }
+
+        castTask = Task { @MainActor in
+            await runGlassesCast()
+            castTask = nil
+        }
+        await castTask?.value
+    }
+
+    private func runGlassesCast() async {
+        stopCast()
+        signaling.status = "Starting stream…"
+        webrtc.startStream()
 
         if wearables.canStreamFromGlasses {
             do {
                 try await wearables.startGlassesStream { [weak self] step in
                     self?.signaling.status = step
                 }
-                webrtc.startStream()
+                guard !Task.isCancelled else { return }
                 signaling.sendSignal(type: "stream-started")
                 signaling.status = "Casting from glasses"
                 return
@@ -240,9 +267,15 @@ final class RelayViewModel: ObservableObject {
             signaling.status = "Meta SDK not registered — using phone camera fallback…"
         }
 
+        guard !Task.isCancelled else { return }
+
         do {
-            try await phoneCamera.start()
-            webrtc.startStream()
+            try await phoneCamera.startAfterAuthorization()
+            guard !Task.isCancelled else {
+                phoneCamera.stop()
+                webrtc.stopStream()
+                return
+            }
             signaling.sendSignal(type: "stream-started", payload: ["source": "phone"])
             signaling.status = "Casting from phone camera (hold phone at glasses POV)"
         } catch {

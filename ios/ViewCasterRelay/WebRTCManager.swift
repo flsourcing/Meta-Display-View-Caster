@@ -5,6 +5,7 @@ import MWDATCamera
 
 final class FrameCapturer: RTCVideoCapturer {}
 
+@MainActor
 final class WebRTCManager: NSObject {
     private lazy var factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
@@ -21,6 +22,10 @@ final class WebRTCManager: NSObject {
         self.signaling = signaling
     }
 
+    func prepareFactory() {
+        _ = factory
+    }
+
     func startStream() {
         guard pc == nil else { return }
         let config = RTCConfiguration()
@@ -32,10 +37,13 @@ final class WebRTCManager: NSObject {
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         pc = factory.peerConnection(with: config, constraints: constraints, delegate: self)
 
-        videoSource = factory.videoSource()
-        frameCapturer = FrameCapturer()
-        localVideoTrack = factory.videoTrack(with: videoSource!, trackId: "video0")
-        pc?.add(localVideoTrack!, streamIds: ["stream0"])
+        let source = factory.videoSource()
+        let capturer = FrameCapturer()
+        let track = factory.videoTrack(with: source, trackId: "video0")
+        videoSource = source
+        frameCapturer = capturer
+        localVideoTrack = track
+        pc?.add(track, streamIds: ["stream0"])
 
         let offerConstraints = RTCMediaConstraints(
             mandatoryConstraints: ["OfferToReceiveAudio": "false", "OfferToReceiveVideo": "false"],
@@ -93,25 +101,20 @@ final class WebRTCManager: NSObject {
 }
 
 extension WebRTCManager: RTCPeerConnectionDelegate {
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
-    func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
+    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
+    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
+    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
+    nonisolated func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
+    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {}
+    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
+    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
         let candidateSdp = candidate.sdp
         let mLineIndex = candidate.sdpMLineIndex
         let mid = candidate.sdpMid
-        let signaling = self.signaling
-        Task { @MainActor in
-            signaling?.sendIceCandidate(
-                candidateSdp,
-                sdpMLineIndex: mLineIndex,
-                sdpMid: mid
-            )
+        Task { @MainActor [weak self] in
+            self?.signaling?.sendIceCandidate(candidateSdp, sdpMLineIndex: mLineIndex, sdpMid: mid)
         }
     }
-    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
+    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
+    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
 }

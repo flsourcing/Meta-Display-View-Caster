@@ -6,26 +6,41 @@ final class PhoneCameraManager: NSObject, @unchecked Sendable {
     var onSampleBuffer: ((CMSampleBuffer) -> Void)?
 
     private let session = AVCaptureSession()
+    private let sessionQueue = DispatchQueue(label: "viewcaster.phone.camera.session")
     private var output: AVCaptureVideoDataOutput?
     private var isRunning = false
 
     func start() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            sessionQueue.async { [weak self] in
+                guard let self else {
+                    continuation.resume(throwing: PhoneCameraError.noCamera)
+                    return
+                }
+                do {
+                    try self.startOnSessionQueue()
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func startOnSessionQueue() throws {
         guard !isRunning else { return }
 
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
             break
         case .notDetermined:
-            guard await AVCaptureDevice.requestAccess(for: .video) else {
-                throw PhoneCameraError.denied
-            }
+            throw PhoneCameraError.denied
         default:
             throw PhoneCameraError.denied
         }
 
         session.beginConfiguration()
         session.sessionPreset = .hd1280x720
-
         session.inputs.forEach { session.removeInput($0) }
         session.outputs.forEach { session.removeOutput($0) }
 
@@ -42,7 +57,7 @@ final class PhoneCameraManager: NSObject, @unchecked Sendable {
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
         ]
         videoOutput.alwaysDiscardsLateVideoFrames = true
-        videoOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "viewcaster.phone.camera"))
+        videoOutput.setSampleBufferDelegate(self, queue: sessionQueue)
 
         guard session.canAddOutput(videoOutput) else {
             session.commitConfiguration()
@@ -51,15 +66,29 @@ final class PhoneCameraManager: NSObject, @unchecked Sendable {
         session.addOutput(videoOutput)
         output = videoOutput
         session.commitConfiguration()
-
         session.startRunning()
         isRunning = true
     }
 
+    func startAfterAuthorization() async throws {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            try await start()
+        case .notDetermined:
+            let granted = await AVCaptureDevice.requestAccess(for: .video)
+            guard granted else { throw PhoneCameraError.denied }
+            try await start()
+        default:
+            throw PhoneCameraError.denied
+        }
+    }
+
     func stop() {
-        guard isRunning else { return }
-        session.stopRunning()
-        isRunning = false
+        sessionQueue.async { [weak self] in
+            guard let self, self.isRunning else { return }
+            self.session.stopRunning()
+            self.isRunning = false
+        }
     }
 
     enum PhoneCameraError: LocalizedError {
@@ -81,6 +110,14 @@ extension PhoneCameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        onSampleBuffer?(sampleBuffer)
+        guard CMSampleBufferIsValid(sampleBuffer) else { return }
+        var copy: CMSampleBuffer?
+        let status = CMSampleBufferCreateCopy(allocator: kCFAllocatorDefault, sampleBuffer: sampleBuffer, sampleBufferOut: &copy)
+        guard status == noErr, let copy else { return }
+
+        let handler = onSampleBuffer
+        DispatchQueue.main.async {
+            handler?(copy)
+        }
     }
 }
