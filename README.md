@@ -28,14 +28,13 @@ SIGNALING_URL: 'wss://YOUR-SERVICE.onrender.com',
 
 Push to `main` so GitHub Pages picks up the change.
 
-### 2. Install the phone app (Sideloadly)
+### 2. Install on iPhone (pick one)
 
-1. Go to **Actions** → **Build iOS IPA** → run workflow (or wait for push to `ios/`)
-2. Download the **ViewCasterRelay-ipa** artifact
-3. Open [Sideloadly](https://sideloadly.io), drag the `.ipa`, sign with your Apple ID, install on iPhone
-4. On first launch: allow **Camera** when prompted (needed for Live Stream)
-5. Set the signaling server URL in the app if it differs from default
-6. Tap **Start relay** — note the 6-digit code
+**Profile (no PC):** On your iPhone, open  
+[flsourcing.github.io/Meta-Display-View-Caster/install.html](https://flsourcing.github.io/Meta-Display-View-Caster/install.html)  
+→ tap **Install View Caster Profile** → Settings → Install → open home screen icon.
+
+**Native app (best camera):** [GitHub Releases](https://github.com/flsourcing/Meta-Display-View-Caster/releases) → download IPA → sideload with [Sideloadly](https://sideloadly.io).
 
 ### 3. Desktop
 
@@ -53,7 +52,7 @@ Enter the same code, tap **Go**, then **Live Stream**.
 
 | Device | URL / app |
 |--------|-----------|
-| Phone | **View Caster Relay** (sideloaded IPA) |
+| Phone | [install.html](https://flsourcing.github.io/Meta-Display-View-Caster/install.html) (profile) or native IPA |
 | Desktop | [index.html](https://flsourcing.github.io/Meta-Display-View-Caster/) |
 | Glasses | [glasses.html](https://flsourcing.github.io/Meta-Display-View-Caster/glasses.html) |
 

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>FullScreen</key>
+			<true/>
+			<key>Icon</key>
+			<data></data>
+			<key>IsRemovable</key>
+			<true/>
+			<key>Label</key>
+			<string>View Caster</string>
+			<key>PayloadDescription</key>
+			<string>Phone relay for Meta Display View Caster</string>
+			<key>PayloadDisplayName</key>
+			<string>View Caster</string>
+			<key>PayloadIdentifier</key>
+			<string>com.mdvc.webclip</string>
+			<key>PayloadType</key>
+			<string>com.apple.webClip.managed</string>
+			<key>PayloadUUID</key>
+			<string>A1B2C3D4-E5F6-7890-ABCD-EF1234567890</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>Precomposed</key>
+			<true/>
+			<key>URL</key>
+			<string>https://flsourcing.github.io/Meta-Display-View-Caster/phone.html</string>
+		</dict>
+	</array>
+	<key>PayloadDescription</key>
+	<string>Adds View Caster to your home screen. Open it to show the pairing code and relay session.</string>
+	<key>PayloadDisplayName</key>
+	<string>View Caster Phone</string>
+	<key>PayloadIdentifier</key>
+	<string>com.mdvc.profile</string>
+	<key>PayloadRemovalDisallowed</key>
+	 <false/>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>B2C3D4E5-F6A7-8901-BCDE-F12345678901</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>

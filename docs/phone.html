@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="View Caster">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>View Caster — Phone</title>
+  <link rel="stylesheet" href="css/style.css?v=20">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230064e0' width='100' height='100' rx='20'/><text x='50' y='62' font-size='48' text-anchor='middle' fill='white' font-family='system-ui'>VC</text></svg>">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>View Caster</h1>
+      <p>Phone relay — keep this app open while connecting.</p>
+    </header>
+
+    <div class="card">
+      <p class="code-timer">Pairing code</p>
+      <div id="pair-code" class="pair-code relay-code">······</div>
+      <p id="code-timer" class="code-timer">Starting…</p>
+      <p class="network-status"><span id="network-dot" class="network-dot offline"></span> <span id="network-label">Relay</span></p>
+      <div id="status" class="status waiting" style="margin-top:1rem;">
+        <span class="status-dot"></span>
+        <span id="status-text">Starting…</span>
+      </div>
+      <p class="message" style="margin-top:1rem;font-size:0.85rem;">
+        Desktop: <a id="desktop-link" href="./">open viewer</a><br>
+        Need native camera? <a href="install.html">Install options</a>
+      </p>
+    </div>
+  </div>
+
+  <footer><a href="install.html">Install</a> · <a href="./">Desktop</a></footer>
+
+  <script src="config.js?v=20"></script>
+  <script src="js/ws-signaling.js?v=20"></script>
+  <script src="js/webrtc-phone.js?v=20"></script>
+  <script src="js/phone-relay.js?v=20"></script>
+</body>
+</html>

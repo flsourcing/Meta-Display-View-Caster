@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Install View Caster — iPhone</title>
+  <link rel="stylesheet" href="css/style.css?v=20">
+  <style>
+    .install-btn {
+      display: block;
+      width: 100%;
+      max-width: 360px;
+      margin: 1.25rem auto;
+      padding: 1rem 1.5rem;
+      font-size: 1.15rem;
+      font-weight: 600;
+      text-align: center;
+      text-decoration: none;
+      color: #fff;
+      background: var(--accent);
+      border-radius: 12px;
+    }
+    .install-btn.secondary {
+      background: var(--surface);
+      border: 2px solid var(--border);
+      color: var(--text);
+    }
+    .steps { text-align: left; max-width: 420px; margin: 0 auto 1.5rem; }
+    .steps li { margin: 0.5rem 0; color: var(--muted); }
+    .note {
+      max-width: 420px;
+      margin: 1rem auto;
+      padding: 1rem;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Install on iPhone</h1>
+      <p>Use a configuration profile to add View Caster to your home screen.</p>
+    </header>
+
+    <div class="card">
+      <h2 style="font-size:1.1rem;margin-bottom:0.75rem;">Option A — Profile (recommended)</h2>
+      <p class="message">On your iPhone, tap the button below. iOS will ask to review and install a profile, then add <strong>View Caster</strong> to your home screen.</p>
+
+      <a class="install-btn" href="view-caster.mobileconfig">Install View Caster Profile</a>
+
+      <ol class="steps">
+        <li>Tap <strong>Install View Caster Profile</strong> above</li>
+        <li>Tap <strong>Allow</strong> when iOS asks to download the profile</li>
+        <li>Open <strong>Settings</strong> → <strong>Profile Downloaded</strong> (or General → VPN &amp; Device Management)</li>
+        <li>Tap <strong>Install</strong>, enter passcode, confirm</li>
+        <li>Open the new <strong>View Caster</strong> icon on your home screen</li>
+      </ol>
+
+      <p class="note">The profile is unsigned (normal for home-brew profiles). iOS will show “Not Verified” — tap Install anyway. It only adds a home-screen shortcut to the relay page; it does not change system settings.</p>
+    </div>
+
+    <div class="card" style="margin-top:1rem;">
+      <h2 style="font-size:1.1rem;margin-bottom:0.75rem;">Option B — Native app (best camera)</h2>
+      <p class="message">For the full relay app with native camera, download the IPA and sideload with <a href="https://sideloadly.io">Sideloadly</a> on a PC.</p>
+      <a class="install-btn secondary" href="https://github.com/flsourcing/Meta-Display-View-Caster/releases/latest">Download IPA (GitHub Releases)</a>
+      <p class="note">iOS cannot install unsigned IPAs from a profile link alone — Sideloadly re-signs with your Apple ID. The profile (Option A) works without a computer but uses the web relay.</p>
+    </div>
+
+    <div class="card" style="margin-top:1rem;">
+      <p class="message"><strong>After install:</strong> open View Caster on your phone → note the code → enter it on <a href="./">desktop</a> and <a href="glasses.html">glasses</a>.</p>
+    </div>
+  </div>
+
+  <footer><a href="./">Desktop viewer</a> · <a href="phone.html">Phone relay</a></footer>
+</body>
+</html>

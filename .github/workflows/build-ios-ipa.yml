@@ -48,3 +48,12 @@ jobs:
           name: ViewCasterRelay-ipa
           path: ios/build/ViewCasterRelay-unsigned.ipa
           retention-days: 30
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+        with:
+          tag_name: ios-${{ github.run_number }}
+          name: View Caster Relay iOS ${{ github.run_number }}
+          files: ios/build/ViewCasterRelay-unsigned.ipa
+          generate_release_notes: true
