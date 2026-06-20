@@ -18,7 +18,7 @@ final class MetaAppDelegate: NSObject, UIApplicationDelegate {
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
         NSLog("ViewCaster: application openURL \(url.absoluteString)")
-        deliver(url)
+        MetaAppDelegate.deliver(url)
         return true
     }
 
