@@ -13,7 +13,7 @@ final class WearablesManager: ObservableObject {
 
     var onVideoFrame: ((VideoFrame) -> Void)?
 
-    private var wearables: Wearables { Wearables.shared }
+    private var sdk: any WearablesInterface { Wearables.shared }
     private var deviceSession: DeviceSession?
     private var glassesStream: MWDATCamera.Stream?
     private var frameListener: Any?
@@ -28,7 +28,7 @@ final class WearablesManager: ObservableObject {
         observeTasks = [
             Task { [weak self] in
                 guard let self else { return }
-                for await state in self.wearables.registrationStateStream() {
+                for await state in self.sdk.registrationStateStream() {
                     await MainActor.run {
                         switch state {
                         case .registered:
@@ -49,7 +49,7 @@ final class WearablesManager: ObservableObject {
     func connectMetaAI() {
         Task { @MainActor in
             do {
-                try await wearables.startRegistration()
+                try await sdk.startRegistration()
                 registrationLabel = "Opening Meta AI… approve connection"
             } catch {
                 registrationLabel = "Registration failed: \(error.localizedDescription)"
@@ -60,7 +60,7 @@ final class WearablesManager: ObservableObject {
     func requestGlassesCamera() async {
         cameraLabel = "Opening Meta AI for camera permission…"
         do {
-            let status = try await wearables.requestPermission(.camera)
+            let status = try await sdk.requestPermission(.camera)
             cameraGranted = (status == .granted)
             cameraLabel = cameraGranted
                 ? "Glasses camera allowed"
@@ -72,7 +72,7 @@ final class WearablesManager: ObservableObject {
 
     func handleCallback(_ url: URL) async {
         do {
-            _ = try await wearables.handleUrl(url)
+            _ = try await sdk.handleUrl(url)
         } catch {
             registrationLabel = "Meta AI callback failed"
         }
@@ -91,8 +91,8 @@ final class WearablesManager: ObservableObject {
 
         stopGlassesStream()
 
-        let selector = AutoDeviceSelector(wearables: wearables)
-        let session = try wearables.createSession(deviceSelector: selector)
+        let selector = AutoDeviceSelector(wearables: sdk)
+        let session = try sdk.createSession(deviceSelector: selector)
         deviceSession = session
         try session.start()
 
