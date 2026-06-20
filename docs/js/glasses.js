@@ -98,6 +98,14 @@
         els.streamBtn.classList.add('active');
         els.streamHint.textContent = 'Casting…';
       }
+      if (msg?.type === 'stream-error') {
+        streaming = false;
+        els.streamBtn.textContent = 'Live Stream';
+        els.streamBtn.classList.remove('active');
+        const errText = msg.message || 'Stream failed on phone — check View Caster app.';
+        els.streamHint.textContent = errText;
+        setStatus('error', errText);
+      }
       if (msg?.type === 'stop-stream') {
         streaming = false;
         els.streamBtn.textContent = 'Live Stream';

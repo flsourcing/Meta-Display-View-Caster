@@ -136,6 +136,14 @@ final class RelayViewModel: ObservableObject {
         Task { await wearables.refreshAfterForeground() }
     }
 
+    func userConfirmMetaConnected() {
+        wearables.userConfirmMetaConnected()
+    }
+
+    func userConfirmCameraAllowed() {
+        wearables.userConfirmCameraAllowed()
+    }
+
     func connectMetaAIWebApp() {
         UIPasteboard.general.string = Self.glassesURL
         metaHint = "Glasses web app URL copied. Meta AI → Web apps → add URL for the digit pad on glasses."
@@ -149,7 +157,11 @@ final class RelayViewModel: ObservableObject {
         endBackgroundTask()
         refreshMetaInstallState()
         wearables.unlockCameraStepIfNeeded()
-        Task { await wearables.refreshAfterForeground() }
+        Task {
+            await wearables.refreshAfterForeground()
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            await wearables.refreshAfterForeground()
+        }
         if !signaling.connected {
             start()
         }
@@ -182,17 +194,19 @@ final class RelayViewModel: ObservableObject {
 
     private func beginGlassesCast() async {
         signaling.status = "Starting glasses camera…"
-        await wearables.refreshAfterForeground()
         do {
-            try await wearables.startGlassesStream()
+            try await wearables.startGlassesStream { [weak self] step in
+                self?.signaling.status = step
+            }
             webrtc.startStream()
             signaling.sendSignal(type: "stream-started")
             signaling.status = "Casting from glasses"
         } catch {
             webrtc.stopStream()
             wearables.stopGlassesStream()
-            signaling.sendSignal(type: "stream-error", payload: ["message": error.localizedDescription])
-            signaling.status = error.localizedDescription
+            let msg = error.localizedDescription
+            signaling.sendSignal(type: "stream-error", payload: ["message": msg])
+            signaling.status = msg
         }
     }
 }
@@ -297,18 +311,13 @@ struct ContentView: View {
                             .foregroundStyle(model.wearables.isRegistered ? .green : .secondary)
                             .multilineTextAlignment(.center)
 
-                        if model.wearables.metaSetupStarted && !model.wearables.isRegistered {
-                            Button("Sync Meta status") {
-                                model.syncMetaStatus()
+                        if !model.wearables.isRegistered {
+                            Button("Meta AI shows connected — tap here") {
+                                model.userConfirmMetaConnected()
                             }
                             .font(.footnote)
-                            .buttonStyle(.bordered)
-                        }
-
-                        if !model.wearables.lastMetaSyncNote.isEmpty {
-                            Text(model.wearables.lastMetaSyncNote)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            .buttonStyle(.borderedProminent)
+                            .tint(.green)
                         }
 
                         Label(model.wearables.cameraGranted ? "2. Glasses camera allowed" : "2. Allow glasses camera",
@@ -319,12 +328,28 @@ struct ContentView: View {
                         }
                         .buttonStyle(.bordered)
                         .disabled(model.metaBlocked || model.wearables.cameraGranted
-                                  || (!model.wearables.metaSetupStarted && !model.wearables.isRegistered))
+                                  || !model.wearables.isRegistered && !model.wearables.metaSetupStarted)
 
                         Text(model.wearables.cameraLabel)
                             .font(.footnote)
                             .foregroundStyle(model.wearables.cameraGranted ? .green : .secondary)
                             .multilineTextAlignment(.center)
+
+                        if !model.wearables.cameraGranted {
+                            Button("Camera allowed in Meta AI — tap here") {
+                                model.userConfirmCameraAllowed()
+                            }
+                            .font(.footnote)
+                            .buttonStyle(.borderedProminent)
+                            .tint(.green)
+                        }
+
+                        if !model.wearables.lastMetaSyncNote.isEmpty {
+                            Text(model.wearables.lastMetaSyncNote)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
 
                         Button("Add glasses web app (digit pad)") {
                             model.connectMetaAIWebApp()
