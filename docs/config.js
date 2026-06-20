@@ -5,6 +5,9 @@ window.CASTER_CONFIG = {
   PEER_PREFIX: 'mdvc-',
   CAM_PREFIX: 'mdvc-cam-',
   CODE_ROTATION_MS: 300_000,
+  CONNECT_TIMEOUT_MS: 10000,
+  CONNECT_RETRY_MS: 500,
+  CONNECT_ATTEMPTS: 6,
 
   PEERJS: {
     host: '0.peerjs.com',

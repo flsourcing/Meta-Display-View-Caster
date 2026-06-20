@@ -21,6 +21,7 @@
   let activeCall = null;
   let connected = false;
   let connecting = false;
+  let peerReady = null;
 
   const params = new URLSearchParams(location.search);
   const urlCode = params.get('code')?.replace(/\D/g, '').slice(0, 6);
@@ -60,8 +61,7 @@
     connecting = false;
     cleanupCall();
     dataConn?.close();
-    peer?.destroy();
-    peer = null;
+    dataConn = null;
     els.viewerSection.classList.add('hidden');
     els.connectSection.classList.remove('hidden');
     els.connectBtn.disabled = false;
@@ -69,8 +69,8 @@
     showError('');
   }
 
-  function setupPeer() {
-    peer.on('call', (call) => {
+  function setupPeer(p) {
+    p.on('call', (call) => {
       activeCall = call;
       call.answer();
       call.on('stream', (s) => {
@@ -80,6 +80,14 @@
       });
       call.on('close', cleanupCall);
     });
+  }
+
+  async function ensurePeer() {
+    if (peer?.open) return peer;
+    peer?.destroy();
+    peer = await CasterSignaling.createPeerWithRetry();
+    setupPeer(peer);
+    return peer;
   }
 
   function bindRelayMessages() {
@@ -108,47 +116,20 @@
     showError('');
     setStatus('waiting', 'Connecting…');
 
-    const maxAttempts = 5;
-    let lastError;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      try {
-        peer?.destroy();
-        peer = await CasterSignaling.createPeerWithRetry();
-        setupPeer();
-        setStatus('waiting', `Finding phone relay… (${attempt}/${maxAttempts})`);
-
-        dataConn = peer.connect(CasterSignaling.peerIdForCode(code), { reliable: true });
-        await CasterSignaling.waitForConnection(dataConn, 45000);
-        bindRelayMessages();
-        CasterSignaling.sendData(dataConn, { type: 'hello', role: 'desktop', peerId: peer.id });
-        await CasterSignaling.waitForRelayAck(dataConn);
-
-        connected = true;
-        connecting = false;
-        showViewer(code);
-        showError('');
-        return;
-      } catch (err) {
-        lastError = err;
-        console.warn(`connect attempt ${attempt}`, err);
-        if (attempt < maxAttempts) {
-          setStatus('waiting', `Retrying… keep relay.html open on phone (${attempt + 1}/${maxAttempts})`);
-          await new Promise((r) => setTimeout(r, 3000));
-        }
-      }
+    try {
+      const p = await ensurePeer();
+      dataConn = await CasterSignaling.connectToRelay(code, p, 'desktop');
+      bindRelayMessages();
+      connected = true;
+      showViewer(code);
+    } catch (err) {
+      console.error(err);
+      showError(`${err.message || 'Connection failed.'} Keep relay.html open on your phone and try again.`);
+      setStatus('waiting', 'Enter code from phone relay');
+      els.connectBtn.disabled = false;
+    } finally {
+      connecting = false;
     }
-
-    connecting = false;
-    showError(
-      lastError?.message
-        ? `${lastError.message} Keep relay.html open on your phone and try again.`
-        : 'Connection failed. Keep relay.html open on your phone and try again.',
-    );
-    els.connectBtn.disabled = false;
-    setStatus('waiting', 'Enter code from phone relay');
-    peer?.destroy();
-    peer = null;
   }
 
   els.connectBtn.addEventListener('click', connect);
@@ -158,6 +139,9 @@
   });
 
   setStatus('waiting', 'Enter code from phone relay');
+  peerReady = ensurePeer().catch(() => {});
 
-  if (urlCode?.length === 6) connect();
+  if (urlCode?.length === 6) {
+    peerReady.finally(() => connect());
+  }
 })();

@@ -2,7 +2,7 @@
  * PeerJS pairing + WebRTC — runs entirely from GitHub Pages.
  */
 
-const APP_VERSION = '14';
+const APP_VERSION = '15';
 
 function generateCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -32,6 +32,10 @@ function peerOptions(id) {
   };
   if (id) opts.id = id;
   return opts;
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 function withTimeout(promise, ms, message) {
@@ -86,17 +90,38 @@ async function createPeerWithRetry(id, attempts = 3) {
   for (let i = 0; i < attempts; i += 1) {
     const peer = createPeer(id);
     try {
-      await waitForPeerOpen(peer);
+      await waitForPeerOpen(peer, 15000);
       return peer;
     } catch (err) {
       lastErr = err;
       peer.destroy();
-      if (err.type === 'unavailable-id' || err.type === 'network') {
-        await new Promise((r) => setTimeout(r, 1000));
-      }
+      if (i < attempts - 1) await sleep(500);
     }
   }
   throw lastErr || new Error('Could not join pairing network.');
+}
+
+async function connectToRelay(code, peer, role) {
+  const relayId = peerIdForCode(code);
+  const attempts = window.CASTER_CONFIG?.CONNECT_ATTEMPTS || 6;
+  const timeoutMs = window.CASTER_CONFIG?.CONNECT_TIMEOUT_MS || 10000;
+  const retryMs = window.CASTER_CONFIG?.CONNECT_RETRY_MS || 500;
+  let lastErr;
+
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      const conn = peer.connect(relayId, { reliable: true });
+      await waitForConnection(conn, timeoutMs);
+      sendData(conn, { type: 'hello', role, peerId: peer.id });
+      await waitForRelayAck(conn, 8000);
+      return conn;
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts - 1) await sleep(retryMs);
+    }
+  }
+
+  throw lastErr || new Error('Could not find phone relay. Keep relay.html open on your phone.');
 }
 
 function sendData(conn, data) {
@@ -111,6 +136,7 @@ window.CasterSignaling = {
   hasCameraSupport,
   createPeer,
   createPeerWithRetry,
+  connectToRelay,
   waitForPeerOpen,
   waitForConnection,
   waitForRelayAck,

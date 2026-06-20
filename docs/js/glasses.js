@@ -93,6 +93,13 @@
     els.streamBtn.focus();
   }
 
+  async function ensurePeer() {
+    if (peer?.open) return peer;
+    peer?.destroy();
+    peer = await CasterSignaling.createPeerWithRetry();
+    return peer;
+  }
+
   async function joinRelay() {
     const code = digits.replace(/\D/g, '').slice(0, 6);
     if (code.length !== 6) return;
@@ -100,55 +107,37 @@
     els.joinBtn.disabled = true;
     setStatus('waiting', 'Connecting…');
 
-    const maxAttempts = 5;
-    let lastError;
+    try {
+      const p = await ensurePeer();
+      dataConn = await CasterSignaling.connectToRelay(code, p, 'glasses');
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      try {
-        peer?.destroy();
-        peer = await CasterSignaling.createPeerWithRetry();
-        setStatus('waiting', `Finding phone relay… (${attempt}/${maxAttempts})`);
-        dataConn = peer.connect(CasterSignaling.peerIdForCode(code), { reliable: true });
-        await CasterSignaling.waitForConnection(dataConn, 45000);
-
-        dataConn.on('data', (msg) => {
-          if (msg?.type === 'stream-started') {
-            streaming = true;
-            els.streamBtn.textContent = 'Stop Stream';
-            els.streamBtn.classList.add('active');
-            els.streamHint.textContent = 'Casting…';
-          }
-          if (msg?.type === 'stop-stream') {
-            streaming = false;
-            els.streamBtn.textContent = 'Live Stream';
-            els.streamBtn.classList.remove('active');
-            els.streamHint.textContent = 'Select Live Stream, press Enter. Camera is on your phone (capture.html).';
-          }
-        });
-
-        dataConn.on('close', () => {
-          connected = false;
-          setStatus('error', 'Disconnected');
-          els.joinBtn.disabled = false;
-        });
-
-        CasterSignaling.sendData(dataConn, { type: 'hello', role: 'glasses', peerId: peer.id });
-        await CasterSignaling.waitForRelayAck(dataConn);
-        showConnected();
-        return;
-      } catch (err) {
-        lastError = err;
-        console.warn(`join attempt ${attempt}`, err);
-        if (attempt < maxAttempts) {
-          setStatus('waiting', `Retrying… (${attempt + 1}/${maxAttempts})`);
-          await new Promise((r) => setTimeout(r, 3000));
+      dataConn.on('data', (msg) => {
+        if (msg?.type === 'stream-started') {
+          streaming = true;
+          els.streamBtn.textContent = 'Stop Stream';
+          els.streamBtn.classList.add('active');
+          els.streamHint.textContent = 'Casting…';
         }
-      }
-    }
+        if (msg?.type === 'stop-stream') {
+          streaming = false;
+          els.streamBtn.textContent = 'Live Stream';
+          els.streamBtn.classList.remove('active');
+          els.streamHint.textContent = 'Select Live Stream, press Enter. Camera is on your phone (capture.html).';
+        }
+      });
 
-    console.error(lastError);
-    setStatus('error', lastError?.message || 'Could not connect. Keep relay.html open on phone.');
-    els.joinBtn.disabled = false;
+      dataConn.on('close', () => {
+        connected = false;
+        setStatus('error', 'Disconnected');
+        els.joinBtn.disabled = false;
+      });
+
+      showConnected();
+    } catch (err) {
+      console.error(err);
+      setStatus('error', err.message || 'Could not connect. Keep relay.html open on phone.');
+      els.joinBtn.disabled = false;
+    }
   }
 
   function toggleStream() {
@@ -174,6 +163,7 @@
   bindEnterOnly(els.streamBtn, toggleStream);
 
   renderDigits();
+  ensurePeer().catch(() => {});
 
   if (presetCode.length === 6) {
     joinRelay();

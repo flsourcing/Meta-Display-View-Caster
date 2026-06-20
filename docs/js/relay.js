@@ -280,8 +280,18 @@
   if (!timerInterval) timerInterval = setInterval(updateTimer, 1000);
 
   if (els.keepOpenHint) {
-    els.keepOpenHint.textContent = 'Keep this page open until glasses show Connected. Pairing does not need camera — camera is only for capture.html when streaming.';
+    els.keepOpenHint.textContent = 'Wait for the green Relay network dot, then connect desktop and glasses. Keep this page open until glasses show Connected.';
   }
+
+  setInterval(() => {
+    if (peer && !peer.open && !peer.destroyed && !registering && currentCode) {
+      try {
+        peer.reconnect();
+      } catch {
+        scheduleRegister(currentCode, true);
+      }
+    }
+  }, 4000);
 
   register(CasterSignaling.generateCode());
 })();
