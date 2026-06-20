@@ -3,10 +3,10 @@ import MWDATCore
 
 @main
 struct ViewCasterRelayApp: App {
+    @UIApplicationDelegateAdaptor(MetaAppDelegate.self) private var appDelegate
     @StateObject private var model: RelayViewModel
 
     init() {
-        // Meta DAT must be configured before any Wearables.shared access.
         do {
             try Wearables.configure()
         } catch {
@@ -19,6 +19,13 @@ struct ViewCasterRelayApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(model)
+                .onAppear {
+                    MetaAppDelegate.onOpenURL = { url in
+                        Task { @MainActor in
+                            await model.handleMetaCallback(url)
+                        }
+                    }
+                }
                 .onOpenURL { url in
                     Task { await model.handleMetaCallback(url) }
                 }

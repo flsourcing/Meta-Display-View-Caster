@@ -213,12 +213,11 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
 
-                        if !model.wearables.isRegistered && !model.metaBlocked
-                            && model.wearables.registrationLabel.contains("Meta AI") {
-                            Button("Refresh after Meta AI") {
-                                model.refreshMetaConnection()
-                            }
-                            .font(.footnote)
+                        if model.wearables.metaSetupStarted && !model.wearables.isRegistered {
+                            Text("After verifying in Meta AI, switch back here — step 2 should unlock automatically.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
                         }
 
                         Button("2. Allow glasses camera") {
