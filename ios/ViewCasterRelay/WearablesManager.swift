@@ -157,15 +157,17 @@ final class WearablesManager: ObservableObject {
 
     private func unavailableHelp(state: RegistrationState) -> String {
         let stateLine = state == .unavailable
-            ? "SDK state: unavailable (often phone OR glasses dev mode, or Team ID mismatch)"
-            : "SDK state: available (Meta AI not finished — tap Open callback required)"
+            ? "SDK state: unavailable — wrong ClientToken/DAM config, or Meta AI dev mode not synced"
+            : "SDK state: available — finish in Meta AI and tap Open (not app switcher)"
         return """
         \(stateLine)
-        1) Meta AI → Settings → App Info → tap version 5× → Developer Mode ON.
-        2) Meta AI → Settings → your glasses → Developer Mode ON.
-        3) After Connect Meta AI, tap Open in Meta AI (not app switcher).
-        4) Meta AI → App connections → Developer mode apps → View Caster Relay should appear.
-        Web Apps (Bypass-style URL) connected ≠ this native app registered.
+        Meta AI fix (official workaround):
+        1) Meta AI → Settings → App Info → tap version 7× → Developer Mode ON.
+        2) Toggle Developer Mode OFF then ON again.
+        3) On same screen, tap Install next to your glasses (DAT SDK).
+        4) Meta AI → Settings → your glasses → Developer Mode ON.
+        5) Connect Meta AI here → tap Open when done.
+        Live Stream will use phone camera until Meta state shows registered.
         """
     }
 
@@ -235,9 +237,18 @@ final class WearablesManager: ObservableObject {
                 unlockCameraStepIfNeeded()
             } catch {
                 registrationLabel = "Registration failed: \(error.localizedDescription)"
+                lastMetaSyncNote = """
+                If Meta AI shows Internal error: toggle Developer Mode off/on in App Info, \
+                tap Install for DAT SDK on your glasses, then try again.
+                """
                 unlockCameraStepIfNeeded()
             }
         }
+    }
+
+    /// True when SDK is ready for glasses camera streaming.
+    var canStreamFromGlasses: Bool {
+        sdkRegistered
     }
 
     func resetMetaConnection() {

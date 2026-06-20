@@ -34,7 +34,8 @@ with open(path, 'rb') as f:
 mw = pl.setdefault('MWDAT', {})
 mw['AppLinkURLScheme'] = 'viewcaster://'
 mw['MetaAppID'] = '0'
-mw['ClientToken'] = '0'
+mw['ClientToken'] = ''
+mw['DAMEnabled'] = True
 mw['TeamID'] = team
 with open(path, 'wb') as f:
     plistlib.dump(pl, f)

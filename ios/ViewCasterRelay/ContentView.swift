@@ -15,6 +15,7 @@ final class RelayViewModel: ObservableObject {
     @Published var metaBlocked = SigningInfo.needsTeamIDPatch
 
     private lazy var webrtc = WebRTCManager()
+    private let phoneCamera = PhoneCameraManager()
     private var subs = Set<AnyCancellable>()
 
     init() {
@@ -36,12 +37,17 @@ final class RelayViewModel: ObservableObject {
             self?.webrtc.pushGlassesFrame(frame)
         }
 
+        phoneCamera.onSampleBuffer = { [weak self] buffer in
+            self?.webrtc.pushSampleBuffer(buffer)
+        }
+
         signaling.onStartStream = { [weak self] in
             Task { @MainActor in
                 await self?.beginGlassesCast()
             }
         }
         signaling.onStopStream = { [weak self] in
+            self?.phoneCamera.stop()
             self?.wearables.stopGlassesStream()
             self?.webrtc.stopStream()
         }
@@ -70,6 +76,7 @@ final class RelayViewModel: ObservableObject {
     }
 
     func stop() {
+        phoneCamera.stop()
         wearables.stopGlassesStream()
         webrtc.stopStream()
         signaling.disconnectAndClearSession()
@@ -204,17 +211,33 @@ final class RelayViewModel: ObservableObject {
     }
 
     private func beginGlassesCast() async {
-        signaling.status = "Starting glasses camera…"
-        do {
-            try await wearables.startGlassesStream { [weak self] step in
-                self?.signaling.status = step
+        signaling.status = "Starting camera…"
+
+        if wearables.canStreamFromGlasses {
+            do {
+                try await wearables.startGlassesStream { [weak self] step in
+                    self?.signaling.status = step
+                }
+                webrtc.startStream()
+                signaling.sendSignal(type: "stream-started")
+                signaling.status = "Casting from glasses"
+                return
+            } catch {
+                wearables.stopGlassesStream()
+                signaling.status = "Glasses stream failed — trying phone camera…"
             }
+        } else {
+            signaling.status = "Meta SDK not registered — using phone camera fallback…"
+        }
+
+        do {
+            try await phoneCamera.start()
             webrtc.startStream()
-            signaling.sendSignal(type: "stream-started")
-            signaling.status = "Casting from glasses"
+            signaling.sendSignal(type: "stream-started", payload: ["source": "phone"])
+            signaling.status = "Casting from phone camera (hold phone at glasses POV)"
         } catch {
+            phoneCamera.stop()
             webrtc.stopStream()
-            wearables.stopGlassesStream()
             let msg = error.localizedDescription
             signaling.sendSignal(type: "stream-error", payload: ["message": msg])
             signaling.status = msg
@@ -297,7 +320,9 @@ struct ContentView: View {
                             .font(.caption.monospaced())
                         Text("IPA Team: \(SigningInfo.configuredMWTeamID ?? "missing")")
                             .font(.caption.monospaced())
-                        Text("ClientToken: \(SigningInfo.configuredClientToken ?? "missing")")
+                        Text("ClientToken: \(SigningInfo.clientTokenLabel)")
+                            .font(.caption.monospaced())
+                        Text("DAMEnabled: \(SigningInfo.configuredDAMEnabled ? "yes" : "no")")
                             .font(.caption.monospaced())
                         Text("Sideload Team: \(SigningInfo.embeddedTeamIdentifier ?? "unknown")")
                             .font(.caption.monospaced())

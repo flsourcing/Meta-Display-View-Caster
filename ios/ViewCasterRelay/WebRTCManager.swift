@@ -55,8 +55,11 @@ final class WebRTCManager: NSObject {
     }
 
     func pushGlassesFrame(_ frame: VideoFrame) {
+        pushSampleBuffer(frame.sampleBuffer)
+    }
+
+    func pushSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
         guard let videoSource, let frameCapturer else { return }
-        let sampleBuffer = frame.sampleBuffer
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let rtcBuffer = RTCCVPixelBuffer(pixelBuffer: pixelBuffer)
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)

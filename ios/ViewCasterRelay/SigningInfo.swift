@@ -96,12 +96,21 @@ enum SigningInfo {
         Two separate connections: (A) Web app on glasses (https URL in Meta AI → Web Apps) \
         does NOT register this native relay app. (B) Tap Connect Meta AI below for the native camera bridge.
         Developer mode — both required:
-        1) Meta AI → Settings → App Info → tap App version 5 times → turn on Developer Mode.
-        2) Meta AI → Settings → your glasses → Developer Mode ON (re-enable after firmware updates).
+        1) Meta AI → Settings → App Info → tap App version 7 times → Developer Mode ON (toggle off/on if stuck).
+        2) Meta AI → Settings → your glasses → Developer Mode ON (tap Install for DAT SDK if shown).
         """
     }
 
     static var configuredClientToken: String? {
         mwDict?["ClientToken"] as? String
+    }
+
+    static var configuredDAMEnabled: Bool {
+        (mwDict?["DAMEnabled"] as? Bool) == true
+    }
+
+    static var clientTokenLabel: String {
+        guard let token = configuredClientToken else { return "missing" }
+        return token.isEmpty ? "(empty — dev mode)" : token
     }
 }

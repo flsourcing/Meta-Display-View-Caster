@@ -23,12 +23,14 @@
 	<dict>
 		<key>AppLinkURLScheme</key>
 		<string>viewcaster://</string>
-        <key>MetaAppID</key>
-        <string>0</string>
-        <key>ClientToken</key>
-        <string>0</string>
-        <key>TeamID</key>
+		<key>MetaAppID</key>
+		<string>0</string>
+		<key>ClientToken</key>
+		<string></string>
+		<key>TeamID</key>
 		<string>JM52FT93Z2</string>
+		<key>DAMEnabled</key>
+		<true/>
 	</dict>
 	<key>UISupportedExternalAccessoryProtocols</key>
 	<array>
