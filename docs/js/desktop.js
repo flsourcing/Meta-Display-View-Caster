@@ -55,7 +55,7 @@
     if (useWS) {
       els.captureHint.textContent = 'Camera runs in the phone app. Tap Live Stream on glasses.';
     } else {
-      els.captureHint.innerHTML = `When streaming: open <a href="capture.html?code=${code}" target="_blank" rel="noopener">capture.html?code=${code}</a> on your phone and allow camera.`;
+      els.captureHint.textContent = 'Camera runs on your phone. Tap Live Stream on glasses to start.';
     }
   }
 
@@ -142,24 +142,28 @@
   async function raceConnectPeerJS(code) {
     destroyPeers();
     connectAbort = false;
-    hostPeer = CasterSignaling.createPeer(CasterSignaling.desktopPeerIdForCode(code));
+    hostPeer = await CasterSignaling.createNamedPeerWithRetry(CasterSignaling.desktopPeerIdForCode(code));
     clientPeer = await CasterSignaling.createPeerWithRetry();
     setupPeer(hostPeer);
     setupPeer(clientPeer);
     const onStatus = (msg) => { if (!connectAbort) setStatus('waiting', msg); };
+
     const inbound = (async () => {
-      await CasterSignaling.waitForPeerOpen(hostPeer, 12000);
-      onStatus('Waiting for phone…');
-      const conn = await CasterSignaling.waitForIncomingHello(hostPeer, 'phone-relay', 20000);
+      onStatus('Waiting for phone relay…');
+      const conn = await CasterSignaling.waitForIncomingHello(hostPeer, 'phone-relay', 45000);
       return { conn, keep: hostPeer, drop: clientPeer };
     })();
+
     const outbound = CasterSignaling.connectToRelay(code, clientPeer, 'desktop', onStatus)
       .then((conn) => ({ conn, keep: clientPeer, drop: hostPeer }));
+
     const result = await CasterSignaling.withTimeout(
-      Promise.race([inbound, outbound]),
-      25000,
-      'Timed out. Refresh relay on phone or use the native app.',
+      CasterSignaling.connectAny([inbound, outbound]),
+      50000,
+      'Timed out. Keep the phone app open until the relay dot is green, then try again.',
     );
+
+    if (connectAbort) throw new Error('Cancelled.');
     result.drop?.destroy();
     peer = result.keep;
     return result.conn;
@@ -180,7 +184,7 @@
     if (connecting) return;
     const code = els.codeInput.value.replace(/\D/g, '').slice(0, 6);
     if (code.length !== 6) {
-      showError(useWS ? 'Enter the 6-digit code from the phone app.' : 'Enter the 6-digit code from relay.html on your phone.');
+      showError(useWS ? 'Enter the 6-digit code from the phone app.' : 'Enter the 6-digit code from the View Caster app on your phone.');
       return;
     }
 

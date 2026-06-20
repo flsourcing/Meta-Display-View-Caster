@@ -109,9 +109,9 @@
     try {
       if (!glassesConn?.open) setStatus('waiting', 'Linking to desktop…');
       conn = peer.connect(CasterSignaling.desktopPeerIdForCode(currentCode), { reliable: true });
-      await CasterSignaling.waitForConnection(conn, 6000);
+      await CasterSignaling.waitForConnection(conn, 12000);
       CasterSignaling.sendData(conn, { type: 'hello', role: 'phone-relay', code: currentCode });
-      await CasterSignaling.waitForRelayAck(conn, 5000);
+      await CasterSignaling.waitForRelayAck(conn, 10000);
       desktopConn = conn;
       desktopPeerId = CasterSignaling.desktopPeerIdForCode(currentCode);
       bindDesktopConn(conn);

@@ -6,10 +6,10 @@ window.CASTER_CONFIG = {
   PEER_PREFIX: 'mdvc-',
   CAM_PREFIX: 'mdvc-cam-',
   CODE_ROTATION_MS: 300_000,
-  CONNECT_TIMEOUT_MS: 7000,
-  CONNECT_RETRY_MS: 400,
-  CONNECT_ATTEMPTS: 6,
-  CONNECT_TOTAL_MS: 22000,
+  CONNECT_TIMEOUT_MS: 10000,
+  CONNECT_RETRY_MS: 500,
+  CONNECT_ATTEMPTS: 8,
+  CONNECT_TOTAL_MS: 45000,
 
   // Leave empty for profile / Safari relay (PeerJS). After deploying server/ to Render:
   // SIGNALING_URL: 'wss://YOUR-SERVICE.onrender.com',

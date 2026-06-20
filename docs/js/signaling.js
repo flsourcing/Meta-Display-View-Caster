@@ -2,7 +2,7 @@
  * PeerJS pairing + WebRTC — runs entirely from GitHub Pages.
  */
 
-const APP_VERSION = '18';
+const APP_VERSION = '24';
 
 function generateCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -64,7 +64,25 @@ function waitForConnection(conn, ms = 30000) {
     conn.once('open', () => res(conn));
     conn.once('error', rej);
     conn.once('close', () => rej(new Error('Connection closed.')));
-  }), ms, 'Could not reach phone relay. Keep relay.html open with a green dot.');
+  }), ms, 'Could not reach phone relay. Keep the View Caster phone app open with a green dot.');
+}
+
+function connectAny(promises) {
+  return new Promise((resolve, reject) => {
+    if (!promises?.length) {
+      reject(new Error('No connection attempts.'));
+      return;
+    }
+    let pending = promises.length;
+    let lastErr;
+    promises.forEach((p) => {
+      Promise.resolve(p).then(resolve).catch((err) => {
+        lastErr = err;
+        pending -= 1;
+        if (pending === 0) reject(lastErr);
+      });
+    });
+  });
 }
 
 function waitForRelayAck(conn, ms = 25000) {
@@ -82,7 +100,7 @@ function waitForRelayAck(conn, ms = 25000) {
     }
     conn.on('data', onData);
     conn.on('close', onClose);
-  }), ms, 'Phone relay did not respond. Refresh relay.html on your phone.');
+  }), ms, 'Phone relay did not respond. Reopen the View Caster app on your phone.');
 }
 
 function waitForIncomingHello(peer, role, ms = 35000) {
@@ -104,7 +122,23 @@ function waitForIncomingHello(peer, role, ms = 35000) {
       conn.on('close', onClose);
     }
     peer.on('connection', onConnection);
-  }), ms, 'Phone relay did not connect. Keep relay.html open with a green dot, then try again.');
+  }), ms, 'Phone relay did not connect. Keep the View Caster app open with a green dot, then try again.');
+}
+
+async function createNamedPeerWithRetry(id, attempts = 4) {
+  let lastErr;
+  for (let i = 0; i < attempts; i += 1) {
+    const peer = createPeer(id);
+    try {
+      await waitForPeerOpen(peer, 18000);
+      return peer;
+    } catch (err) {
+      lastErr = err;
+      peer.destroy();
+      if (i < attempts - 1) await sleep(1500 + i * 500);
+    }
+  }
+  throw lastErr || new Error('Could not register this session. Wait a few seconds and try again.');
 }
 
 function createPeer(id) {
@@ -129,9 +163,9 @@ async function createPeerWithRetry(id, attempts = 3) {
 
 async function connectToRelay(code, peer, role, onStatus) {
   const relayId = peerIdForCode(code);
-  const totalMs = window.CASTER_CONFIG?.CONNECT_TOTAL_MS || 22000;
-  const timeoutMs = window.CASTER_CONFIG?.CONNECT_TIMEOUT_MS || 7000;
-  const retryMs = window.CASTER_CONFIG?.CONNECT_RETRY_MS || 400;
+  const totalMs = window.CASTER_CONFIG?.CONNECT_TOTAL_MS || 45000;
+  const timeoutMs = window.CASTER_CONFIG?.CONNECT_TIMEOUT_MS || 10000;
+  const retryMs = window.CASTER_CONFIG?.CONNECT_RETRY_MS || 500;
   const deadline = Date.now() + totalMs;
   let lastErr;
   let pass = 0;
@@ -146,7 +180,7 @@ async function connectToRelay(code, peer, role, onStatus) {
       conn = peer.connect(relayId, { reliable: true });
       await waitForConnection(conn, Math.min(timeoutMs, remaining));
       sendData(conn, { type: 'hello', role, peerId: peer.id });
-      const ackMs = Math.min(6000, deadline - Date.now());
+      const ackMs = Math.min(12000, deadline - Date.now());
       if (ackMs <= 500) throw new Error('Timed out waiting for phone relay.');
       await waitForRelayAck(conn, ackMs);
       return conn;
@@ -158,7 +192,7 @@ async function connectToRelay(code, peer, role, onStatus) {
     }
   }
 
-  throw lastErr || new Error('Could not reach phone relay. Keep relay.html open with a green dot.');
+  throw lastErr || new Error('Could not reach phone relay. Keep the View Caster app open with a green dot.');
 }
 
 function sendData(conn, data) {
@@ -174,11 +208,14 @@ window.CasterSignaling = {
   hasCameraSupport,
   createPeer,
   createPeerWithRetry,
+  createNamedPeerWithRetry,
   connectToRelay,
+  connectAny,
   waitForIncomingHello,
   withTimeout,
   waitForPeerOpen,
   waitForConnection,
   waitForRelayAck,
   sendData,
+  sleep,
 };
