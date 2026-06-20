@@ -59,8 +59,18 @@ final class RelayViewModel: ObservableObject {
         }
     }
 
-    func configureWearables() {
-        wearables.configure()
+    func configureWearables(configError: String? = nil) {
+        wearables.configure(configError: configError)
+    }
+
+    func fixMetaDevMode() {
+        MetaAIDeepLink.openMetaAI()
+        metaHint = """
+        In Meta AI: Settings → App Info → tap version 7× → Developer Mode ON.
+        Toggle Developer Mode OFF then ON. Tap Install next to your glasses if shown.
+        Then return here and tap Connect Meta AI.
+        Live Stream already works via phone camera without this step.
+        """
     }
 
     func applyServerURL() {
@@ -246,6 +256,7 @@ final class RelayViewModel: ObservableObject {
 }
 
 struct ContentView: View {
+    var configureError: String?
     @EnvironmentObject private var model: RelayViewModel
     @Environment(\.scenePhase) private var scenePhase
 
@@ -322,7 +333,9 @@ struct ContentView: View {
                             .font(.caption.monospaced())
                         Text("ClientToken: \(SigningInfo.clientTokenLabel)")
                             .font(.caption.monospaced())
-                        Text("DAMEnabled: \(SigningInfo.configuredDAMEnabled ? "yes" : "no")")
+                        Text("DAMEnabled: \(SigningInfo.damEnabledLabel)")
+                            .font(.caption.monospaced())
+                        Text("SDK: \(model.wearables.sdkConfigureNote)")
                             .font(.caption.monospaced())
                         Text("Sideload Team: \(SigningInfo.embeddedTeamIdentifier ?? "unknown")")
                             .font(.caption.monospaced())
@@ -338,7 +351,17 @@ struct ContentView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
 
-                    if !model.wearables.sdkRegistered && model.wearables.metaSetupStarted {
+                    if !model.wearables.sdkRegistered {
+                        Text("Live Stream works now via phone camera — Meta registration below is only needed for true glasses POV.")
+                            .font(.footnote)
+                            .foregroundStyle(.green)
+                            .multilineTextAlignment(.center)
+                            .padding(10)
+                            .background(Color(.secondarySystemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+
+                    if !model.wearables.sdkRegistered && model.wearables.registrationStateName.contains("unavailable") {
                         Text("Web app connected in Meta AI ≠ native relay registered. Enable phone dev mode (App Info → tap version 5×) AND glasses dev mode, then Connect Meta AI below.")
                             .font(.footnote)
                             .foregroundStyle(.orange)
@@ -416,6 +439,12 @@ struct ContentView: View {
                             .multilineTextAlignment(.center)
                             .textSelection(.enabled)
 
+                        Button("Fix dev mode in Meta AI") {
+                            model.fixMetaDevMode()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.orange)
+
                         Button("Open Meta AI") {
                             model.openMetaAIApp()
                         }
@@ -471,7 +500,7 @@ struct ContentView: View {
                     }
                     .buttonStyle(.borderedProminent)
 
-                    Text("Profile web app uses your iPhone camera only.\nThis native app streams from Meta glasses via Meta AI.")
+                    Text("Live Stream uses phone camera when Meta SDK is unavailable.\nGlasses POV needs Meta state = registered.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -490,7 +519,7 @@ struct ContentView: View {
             }
             .onAppear {
                 model.refreshMetaInstallState()
-                model.configureWearables()
+                model.configureWearables(configError: configureError)
                 model.start()
             }
             .onChange(of: scenePhase) { _, phase in

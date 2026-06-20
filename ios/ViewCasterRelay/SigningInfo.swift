@@ -110,7 +110,11 @@ enum SigningInfo {
     }
 
     static var clientTokenLabel: String {
-        guard let token = configuredClientToken else { return "missing" }
-        return token.isEmpty ? "(empty — dev mode)" : token
+        guard let token = configuredClientToken else { return "(omitted — dev mode OK)" }
+        return token.isEmpty ? "(empty — dev mode OK)" : token
+    }
+
+    static var damEnabledLabel: String {
+        configuredDAMEnabled ? "yes (display app)" : "no (camera app — correct)"
     }
 }

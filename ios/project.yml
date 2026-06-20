@@ -30,9 +30,7 @@ targets:
         MWDAT:
           AppLinkURLScheme: viewcaster://
           MetaAppID: "0"
-          ClientToken: ""
           TeamID: JM52FT93Z2
-          DAMEnabled: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mdvc.viewcasterrelay

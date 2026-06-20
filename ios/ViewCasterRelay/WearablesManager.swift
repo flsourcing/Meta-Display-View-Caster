@@ -18,6 +18,9 @@ final class WearablesManager: ObservableObject {
     @Published private(set) var glassesDevicesLabel = "Glasses: scanning…"
     @Published private(set) var glassesDeviceCount = 0
     @Published private(set) var sdkRegistered = false
+    @Published private(set) var sdkConfigureNote = ""
+
+    private var registrationAttempted = false
 
     var onVideoFrame: ((VideoFrame) -> Void)?
 
@@ -54,7 +57,8 @@ final class WearablesManager: ObservableObject {
         }
     }
 
-    func configure() {
+    func configure(configError: String? = nil) {
+        sdkConfigureNote = configError ?? "SDK configured"
         deviceSelector = AutoDeviceSelector(wearables: sdk)
         applyRegistrationState(sdk.registrationState)
         startObservers()
@@ -141,14 +145,14 @@ final class WearablesManager: ObservableObject {
             }
         case .unavailable:
             isRegistered = false
-            if metaSetupStarted || registrationConfirmed {
+            if registrationAttempted {
                 unlockCameraStepIfNeeded()
-                registrationLabel = "Registration blocked — see checklist below"
+                registrationLabel = "Meta AI dev mode not active — tap Fix dev mode below"
                 lastMetaSyncNote = unavailableHelp(state: state)
             } else {
                 canRequestCamera = false
-                registrationLabel = "Registration unavailable — enable both developer mode steps"
-                cameraLabel = "Connect Meta AI first"
+                registrationLabel = "Optional: Connect Meta AI for glasses camera (Live Stream works via phone now)"
+                cameraLabel = "Not required for phone camera stream"
             }
         @unknown default:
             isRegistered = false
@@ -228,18 +232,19 @@ final class WearablesManager: ObservableObject {
             enableCameraStep()
             return
         }
-        markMetaSetupStarted()
+        registrationAttempted = true
         Task { @MainActor in
             do {
                 registrationLabel = "Opening Meta AI…"
                 try await sdk.startRegistration()
+                markMetaSetupStarted()
                 registrationLabel = "Approve in Meta AI → tap Open (required) to finish"
                 unlockCameraStepIfNeeded()
             } catch {
-                registrationLabel = "Registration failed: \(error.localizedDescription)"
+                registrationLabel = "Could not open Meta AI registration"
                 lastMetaSyncNote = """
-                If Meta AI shows Internal error: toggle Developer Mode off/on in App Info, \
-                tap Install for DAT SDK on your glasses, then try again.
+                \(unavailableHelp(state: sdk.registrationState))
+                Error: \(error.localizedDescription)
                 """
                 unlockCameraStepIfNeeded()
             }
@@ -264,6 +269,7 @@ final class WearablesManager: ObservableObject {
 
     func clearLocalMetaState() {
         metaSetupStarted = false
+        registrationAttempted = false
         registrationConfirmed = false
         cameraPermissionConfirmed = false
         isRegistered = false
@@ -302,15 +308,23 @@ final class WearablesManager: ObservableObject {
 
     func refreshAfterForeground() async {
         unlockCameraStepIfNeeded()
+        await pollRegistrationState()
         await syncMetaStatus()
+    }
+
+    /// Meta AI dev mode can take a few seconds to sync after returning from the app.
+    private func pollRegistrationState() async {
+        for i in 0..<8 {
+            applyRegistrationState(sdk.registrationState)
+            if sdkRegistered || sdk.registrationState != .unavailable { return }
+            if i == 0 { lastMetaSyncNote = "Checking Meta SDK state…" }
+            try? await Task.sleep(nanoseconds: 750_000_000)
+        }
     }
 
     func syncMetaStatus() async {
         applyRegistrationState(sdk.registrationState)
-        guard sdkRegistered else {
-            lastMetaSyncNote = "SDK not registered — Connect Meta AI and tap Open when Meta AI finishes"
-            return
-        }
+        guard sdkRegistered else { return }
         confirmRegistration()
         do {
             let status = try await sdk.checkPermissionStatus(.camera)
