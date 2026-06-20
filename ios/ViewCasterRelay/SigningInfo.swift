@@ -1,19 +1,26 @@
 import Foundation
-import Security
 
 enum SigningInfo {
-    /// Apple Team ID from the sideload signature (needed for Meta DAT registration).
+    /// Apple Team ID from the sideload provisioning profile (needed for Meta DAT registration).
     static var teamIdentifier: String? {
-        guard let executable = Bundle.main.executableURL else { return nil }
-        var staticCode: SecStaticCode?
-        guard SecStaticCodeCreateWithPath(executable as CFURL, [], &staticCode) == errSecSuccess,
-              let code = staticCode else { return nil }
-        var info: CFDictionary?
-        guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
-              let dict = info as? [String: Any] else { return nil }
-        if let team = dict[kSecCodeInfoTeamIdentifier as String] as? String, !team.isEmpty {
-            return team
+        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let data = try? Data(contentsOf: url),
+              let text = String(data: data, encoding: .ascii) else { return nil }
+
+        if let match = text.range(of: "<key>com.apple.developer.team-identifier</key>\\s*<array>\\s*<string>([A-Z0-9]{10})</string>", options: .regularExpression) {
+            let snippet = String(text[match])
+            if let id = snippet.range(of: "[A-Z0-9]{10}", options: .regularExpression) {
+                return String(snippet[id])
+            }
         }
-        return dict["teamid"] as? String
+
+        if let match = text.range(of: "<key>ApplicationIdentifierPrefix</key>\\s*<array>\\s*<string>([A-Z0-9]{10})</string>", options: .regularExpression) {
+            let snippet = String(text[match])
+            if let id = snippet.range(of: "[A-Z0-9]{10}", options: .regularExpression) {
+                return String(snippet[id])
+            }
+        }
+
+        return nil
     }
 }
