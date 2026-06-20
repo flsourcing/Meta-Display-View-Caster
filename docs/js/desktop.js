@@ -1,5 +1,5 @@
 /**
- * Desktop viewer — waits for phone relay to connect (phone initiates WebRTC).
+ * Desktop viewer — races phone→desktop and desktop→phone in parallel.
  */
 (function () {
   const els = {
@@ -21,6 +21,9 @@
   let activeCall = null;
   let connected = false;
   let connecting = false;
+  let connectAbort = false;
+  let hostPeer = null;
+  let clientPeer = null;
 
   const params = new URLSearchParams(location.search);
   const urlCode = params.get('code')?.replace(/\D/g, '').slice(0, 6);
@@ -55,14 +58,22 @@
     els.videoPlaceholder.classList.remove('hidden');
   }
 
+  function destroyConnectPeers() {
+    hostPeer?.destroy();
+    clientPeer?.destroy();
+    hostPeer = null;
+    clientPeer = null;
+    peer = null;
+  }
+
   function resetToConnect() {
     connected = false;
     connecting = false;
+    connectAbort = true;
     cleanupCall();
     dataConn?.close();
     dataConn = null;
-    peer?.destroy();
-    peer = null;
+    destroyConnectPeers();
     els.viewerSection.classList.add('hidden');
     els.connectSection.classList.remove('hidden');
     els.connectBtn.disabled = false;
@@ -97,28 +108,49 @@
     dataConn.on('close', () => { if (connected) resetToConnect(); });
   }
 
-  async function connectViaPhoneInitiated(code) {
-    peer?.destroy();
-    peer = CasterSignaling.createPeer(CasterSignaling.desktopPeerIdForCode(code));
-    setupPeer(peer);
-
-    const phoneConnPromise = CasterSignaling.waitForIncomingHello(peer, 'phone-relay', 35000);
-    setStatus('waiting', 'Waiting for phone relay…');
-    await CasterSignaling.waitForPeerOpen(peer, 20000);
-    setStatus('waiting', 'Phone relay connecting…');
-    return phoneConnPromise;
+  function abortIfCancelled() {
+    if (connectAbort) throw new Error('Cancelled');
   }
 
-  async function connectViaDesktopInitiated(code) {
-    peer?.destroy();
-    peer = await CasterSignaling.createPeerWithRetry();
-    setupPeer(peer);
-    return CasterSignaling.connectToRelay(
-      code,
-      peer,
-      'desktop',
-      (msg) => setStatus('waiting', msg),
+  async function raceConnect(code) {
+    destroyConnectPeers();
+    connectAbort = false;
+
+    hostPeer = CasterSignaling.createPeer(CasterSignaling.desktopPeerIdForCode(code));
+    clientPeer = await CasterSignaling.createPeerWithRetry();
+    setupPeer(hostPeer);
+    setupPeer(clientPeer);
+
+    const onStatus = (msg) => {
+      if (!connectAbort) setStatus('waiting', msg);
+    };
+
+    const inbound = (async () => {
+      abortIfCancelled();
+      await CasterSignaling.waitForPeerOpen(hostPeer, 12000);
+      abortIfCancelled();
+      onStatus('Waiting for phone…');
+      const conn = await CasterSignaling.waitForIncomingHello(hostPeer, 'phone-relay', 20000);
+      return { conn, keep: hostPeer, drop: clientPeer };
+    })();
+
+    const outbound = (async () => {
+      abortIfCancelled();
+      onStatus('Finding phone relay…');
+      const conn = await CasterSignaling.connectToRelay(code, clientPeer, 'desktop', onStatus);
+      return { conn, keep: clientPeer, drop: hostPeer };
+    })();
+
+    const result = await CasterSignaling.withTimeout(
+      Promise.race([inbound, outbound]),
+      25000,
+      'Timed out. On phone: refresh relay.html, wait for green dot, enter the new code here.',
     );
+
+    abortIfCancelled();
+    result.drop?.destroy();
+    peer = result.keep;
+    return result.conn;
   }
 
   async function connect() {
@@ -133,16 +165,10 @@
     els.connectBtn.disabled = false;
     els.connectBtn.textContent = 'Cancel';
     showError('');
+    setStatus('waiting', 'Connecting…');
 
     try {
-      try {
-        dataConn = await connectViaPhoneInitiated(code);
-      } catch (primaryErr) {
-        console.warn('phone-initiated connect failed, trying fallback', primaryErr);
-        setStatus('waiting', 'Trying alternate route…');
-        dataConn = await connectViaDesktopInitiated(code);
-      }
-
+      dataConn = await raceConnect(code);
       bindRelayMessages();
       connected = true;
       els.connectBtn.textContent = 'Connect';
@@ -150,10 +176,11 @@
       showViewer(code);
     } catch (err) {
       console.error(err);
-      peer?.destroy();
-      peer = null;
-      showError(err.message || 'Connection failed.');
-      setStatus('error', 'Could not connect');
+      destroyConnectPeers();
+      if (err.message !== 'Cancelled') {
+        showError(err.message || 'Connection failed.');
+        setStatus('error', 'Could not connect');
+      }
       els.connectBtn.textContent = 'Connect';
       els.connectBtn.disabled = false;
     } finally {
@@ -163,9 +190,9 @@
 
   els.connectBtn.addEventListener('click', () => {
     if (connecting) {
+      connectAbort = true;
       connecting = false;
-      peer?.destroy();
-      peer = null;
+      destroyConnectPeers();
       els.connectBtn.textContent = 'Connect';
       els.connectBtn.disabled = false;
       setStatus('waiting', 'Enter code from phone relay');

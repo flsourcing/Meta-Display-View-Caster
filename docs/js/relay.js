@@ -103,11 +103,13 @@
     if (connectingDesktop || desktopConn?.open || !peer?.open || !currentCode) return;
     connectingDesktop = true;
     let conn;
+    const prevStatus = els.statusText?.textContent;
     try {
+      if (!glassesConn?.open) setStatus('waiting', 'Linking to desktop…');
       conn = peer.connect(CasterSignaling.desktopPeerIdForCode(currentCode), { reliable: true });
-      await CasterSignaling.waitForConnection(conn, 8000);
+      await CasterSignaling.waitForConnection(conn, 6000);
       CasterSignaling.sendData(conn, { type: 'hello', role: 'phone-relay', code: currentCode });
-      await CasterSignaling.waitForRelayAck(conn, 6000);
+      await CasterSignaling.waitForRelayAck(conn, 5000);
       desktopConn = conn;
       desktopPeerId = CasterSignaling.desktopPeerIdForCode(currentCode);
       bindDesktopConn(conn);
@@ -115,6 +117,9 @@
       setStatus('connected', 'Desktop connected — connect glasses');
     } catch {
       try { conn?.close?.(); } catch { /* ignore */ }
+      if (!desktopConn?.open && !glassesConn?.open && prevStatus) {
+        setStatus('waiting', 'Ready — tap Connect on desktop');
+      }
     } finally {
       connectingDesktop = false;
     }
@@ -122,7 +127,8 @@
 
   function startDesktopPolling() {
     if (desktopPollInterval) return;
-    desktopPollInterval = setInterval(tryConnectDesktop, 2500);
+    tryConnectDesktop();
+    desktopPollInterval = setInterval(tryConnectDesktop, 1000);
   }
 
   function captureUrl() {
