@@ -2,6 +2,11 @@ name: Build iOS IPA
 
 on:
   workflow_dispatch:
+    inputs:
+      team_id:
+        description: 'Apple Team ID (10 chars) — embeds MWDAT.TeamID for Meta AI connection'
+        required: false
+        type: string
   push:
     branches: [main]
     paths:
@@ -16,6 +21,14 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+
+      - name: Inject Team ID for Meta AI
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.team_id != ''
+        run: |
+          PLIST=ios/ViewCasterRelay/Info.plist
+          /usr/libexec/PlistBuddy -c "Delete :MWDAT:TeamID" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :MWDAT:TeamID string '${{ github.event.inputs.team_id }}'" "$PLIST"
+          echo "Set MWDAT.TeamID=${{ github.event.inputs.team_id }}"
 
       - name: Install xcodegen
         run: brew install xcodegen

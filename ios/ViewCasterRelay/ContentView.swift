@@ -10,7 +10,8 @@ final class RelayViewModel: ObservableObject {
     @Published private(set) var signaling: SignalingClient
     @Published var metaHint = ""
     @Published private(set) var wearables = WearablesManager()
-    @Published var sideloadTeamId = SigningInfo.teamIdentifier ?? ""
+    @Published var sideloadTeamId = SigningInfo.embeddedTeamIdentifier ?? ""
+    @Published var metaBlocked = SigningInfo.needsTeamIDPatch
 
     private lazy var webrtc = WebRTCManager()
 
@@ -68,11 +69,28 @@ final class RelayViewModel: ObservableObject {
     }
 
     func connectMetaAI() {
+        refreshMetaInstallState()
+        if metaBlocked {
+            metaHint = SigningInfo.patchInstructions
+            return
+        }
         metaHint = """
-        In Meta AI: approve the connection prompt, or go to App connections → Developer mode apps → View Caster Relay.
-        Enable Developer Mode first: Meta AI → Settings → App Info → tap version 5×.
+        Approve the prompt in Meta AI, then return here.
+        If no prompt: Meta AI → App connections → Developer mode apps → View Caster Relay.
+        Developer Mode: Meta AI → Settings → App Info → tap version 5×.
         """
         wearables.connectMetaAI()
+    }
+
+    func copyTeamIdForPatch() {
+        let team = sideloadTeamId.isEmpty ? "YOUR10CHARID" : sideloadTeamId
+        UIPasteboard.general.string = team
+        metaHint = "Copied Team ID \(team). Patch the IPA on PC, then reinstall."
+    }
+
+    func refreshMetaInstallState() {
+        sideloadTeamId = SigningInfo.embeddedTeamIdentifier ?? sideloadTeamId
+        metaBlocked = SigningInfo.needsTeamIDPatch
     }
 
     func allowGlassesCamera() {
@@ -89,7 +107,7 @@ final class RelayViewModel: ObservableObject {
     }
 
     func onReturnFromBackground() {
-        sideloadTeamId = SigningInfo.teamIdentifier ?? sideloadTeamId
+        refreshMetaInstallState()
         if !signaling.connected {
             start()
         }
@@ -149,12 +167,35 @@ struct ContentView: View {
                     .background(Color(.secondarySystemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
 
+                    if model.metaBlocked {
+                        VStack(spacing: 10) {
+                            Text("Meta AI can't connect to this install")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.orange)
+                            Text("The IPA must include your Apple Team ID before sideloading. This is why Meta AI opens but shows no connection prompt.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                            if !model.sideloadTeamId.isEmpty {
+                                Text("Your Team ID: \(model.sideloadTeamId)")
+                                    .font(.caption.monospaced())
+                            }
+                            Button("Copy Team ID") {
+                                model.copyTeamIdForPatch()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .padding()
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+
                     Group {
                         Button("1. Connect Meta AI") {
                             model.connectMetaAI()
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(model.wearables.isRegistered)
+                        .disabled(model.wearables.isRegistered || model.metaBlocked)
 
                         Text(model.wearables.registrationLabel)
                             .font(.footnote)
@@ -185,14 +226,7 @@ struct ContentView: View {
                             .multilineTextAlignment(.center)
                     }
 
-                    if !model.sideloadTeamId.isEmpty {
-                        Text("Sideload Team ID: \(model.sideloadTeamId)\nIf Meta AI never prompts, patch the IPA with this Team ID before installing (see install page).")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-
-                    TextField("Signaling server (wss://…)", text: $model.serverURLString)
+                    TextField("Signaling server (wss://…)", text: $model.serverURLString))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .padding()
@@ -222,6 +256,7 @@ struct ContentView: View {
                 .padding()
             }
             .onAppear {
+                model.refreshMetaInstallState()
                 model.configureWearables()
                 model.start()
             }

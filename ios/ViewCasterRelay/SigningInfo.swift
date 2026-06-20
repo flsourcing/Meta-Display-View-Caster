@@ -1,8 +1,8 @@
 import Foundation
 
 enum SigningInfo {
-    /// Apple Team ID from the sideload provisioning profile (needed for Meta DAT registration).
-    static var teamIdentifier: String? {
+    /// Team ID from the sideload signature (embedded.mobileprovision).
+    static var embeddedTeamIdentifier: String? {
         guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
               let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .ascii) else { return nil }
@@ -22,5 +22,30 @@ enum SigningInfo {
         }
 
         return nil
+    }
+
+    /// Team ID baked into Info.plist for Meta DAT (must match embeddedTeamIdentifier).
+    static var configuredMWTeamID: String? {
+        guard let mw = Bundle.main.object(forInfoDictionaryKey: "MWDAT") as? [String: Any],
+              let team = mw["TeamID"] as? String,
+              !team.isEmpty else { return nil }
+        return team
+    }
+
+    /// True when Meta AI cannot link — IPA was sideloaded without Team ID patch.
+    static var needsTeamIDPatch: Bool {
+        guard let signed = embeddedTeamIdentifier else { return configuredMWTeamID == nil }
+        guard let configured = configuredMWTeamID else { return true }
+        return configured.uppercased() != signed.uppercased()
+    }
+
+    static var patchInstructions: String {
+        let team = embeddedTeamIdentifier ?? "YOUR10CHARID"
+        return """
+        Reinstall required for Meta AI connection.
+        On PC run:
+        .\\patch-ipa-teamid.ps1 -TeamId \(team) -Ipa ViewCasterRelay-unsigned.ipa
+        Then Sideloadly install the -patched.ipa (not the original).
+        """
     }
 }

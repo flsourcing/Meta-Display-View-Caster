@@ -65,20 +65,22 @@
 
     <div class="card" style="margin-top:1rem;">
       <h2 style="font-size:1.1rem;margin-bottom:0.75rem;">Option B — Native app (glasses camera)</h2>
-      <p class="message">Streams from <strong>Meta glasses camera</strong> (not iPhone). Opens Meta AI for app connection + camera permission. Requires sideloading.</p>
+      <p class="message">Streams from <strong>Meta glasses camera</strong>. Meta AI will <em>not</em> show a connection prompt unless the IPA includes your Apple Team ID <strong>before</strong> sideloading.</p>
       <a class="install-btn secondary" href="https://github.com/flsourcing/Meta-Display-View-Caster/releases/latest">Download IPA (GitHub Releases)</a>
       <ol class="steps">
         <li>Download <code>ViewCasterRelay-unsigned.ipa</code></li>
-        <li><strong>Patch Team ID</strong> (required for Meta AI connection):<br>
+        <li><strong>Option A — Patch on PC</strong> (Python required):<br>
           <code>cd ios</code><br>
           <code>.\patch-ipa-teamid.ps1 -TeamId YOUR10CHARID -Ipa path\to\ViewCasterRelay-unsigned.ipa</code><br>
-          Use the Team ID Sideloadly shows when installing, or the value shown in the app after first open.</li>
-        <li>Install the <strong>-patched.ipa</strong> with Sideloadly (same Apple ID as iPhone)</li>
-        <li><strong>Trust:</strong> Settings → General → VPN &amp; Device Management → Trust</li>
-        <li>Meta AI → Settings → <strong>App Info</strong> → tap version <strong>5×</strong> → enable Developer Mode</li>
-        <li>Open relay app → <strong>Start relay</strong> (wait up to 60s for code) → <strong>Connect Meta AI</strong> → approve → <strong>Allow glasses camera</strong></li>
+          Install the <strong>-patched.ipa</strong> with Sideloadly.</li>
+        <li><strong>Option B — GitHub build with your Team ID:</strong><br>
+          <a href="https://github.com/flsourcing/Meta-Display-View-Caster/actions/workflows/build-ios-ipa.yml">Actions → Build iOS IPA → Run workflow</a> → enter your 10-char Team ID → download from Releases.</li>
+        <li>Find Team ID: Sideloadly log when installing, or open the app → <strong>Copy Team ID</strong> (shown if patch was missed).</li>
+        <li>Trust app: Settings → General → VPN &amp; Device Management</li>
+        <li>Meta AI → Settings → App Info → tap version <strong>5×</strong> → Developer Mode ON</li>
+        <li>Relay app: Start relay → Connect Meta AI → approve → Allow glasses camera</li>
       </ol>
-      <p class="note">Requires <strong>iOS 17+</strong>. Step 2 is required — without Team ID in the IPA, Meta AI opens but won’t show the app connection prompt.</p>
+      <p class="note">Requires <strong>iOS 17+</strong>. Skipping the Team ID step is the #1 reason Meta AI opens but never prompts to connect.</p>
     </div>
 
     <div class="card" style="margin-top:1rem;">
