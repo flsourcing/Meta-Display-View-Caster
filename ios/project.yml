@@ -1,11 +1,12 @@
 name: ViewCasterRelay
 options:
   bundleIdPrefix: com.mdvc
+  projectFormat: xcode16_0
   deploymentTarget:
     iOS: "16.0"
 settings:
   base:
-    SWIFT_VERSION: "5.9"
+    SWIFT_VERSION: "6.0"
     TARGETED_DEVICE_FAMILY: "1"
 packages:
   WebRTC:
