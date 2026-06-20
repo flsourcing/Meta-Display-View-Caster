@@ -66,7 +66,7 @@ final class RelayViewModel: ObservableObject {
     func stop() {
         wearables.stopGlassesStream()
         webrtc.stopStream()
-        signaling.disconnect()
+        signaling.disconnectAndClearSession()
     }
 
     func restartRelay() {
@@ -121,7 +121,10 @@ final class RelayViewModel: ObservableObject {
     }
 
     func allowGlassesCamera() {
-        Task { await wearables.requestGlassesCamera() }
+        Task {
+            await wearables.requestGlassesCamera()
+            await wearables.refreshAfterForeground()
+        }
     }
 
     func connectMetaAIWebApp() {
@@ -134,12 +137,32 @@ final class RelayViewModel: ObservableObject {
     }
 
     func onReturnFromBackground() {
+        endBackgroundTask()
         refreshMetaInstallState()
         wearables.unlockCameraStepIfNeeded()
         Task { await wearables.refreshAfterForeground() }
         if !signaling.connected {
             start()
         }
+    }
+
+    func onEnterBackground() {
+        beginBackgroundTask()
+    }
+
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+
+    private func beginBackgroundTask() {
+        guard backgroundTaskID == .invalid else { return }
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask { [weak self] in
+            self?.endBackgroundTask()
+        }
+    }
+
+    private func endBackgroundTask() {
+        guard backgroundTaskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTaskID)
+        backgroundTaskID = .invalid
     }
 
     func finishedMetaAISetup() {
@@ -248,6 +271,9 @@ struct ContentView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
                     Group {
+                        Label(model.wearables.isRegistered ? "1. Meta AI connected" : "1. Connect Meta AI",
+                              systemImage: model.wearables.isRegistered ? "checkmark.circle.fill" : "circle")
+
                         Button("1. Connect Meta AI") {
                             model.connectMetaAI()
                         }
@@ -256,26 +282,33 @@ struct ContentView: View {
 
                         Text(model.wearables.registrationLabel)
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(model.wearables.isRegistered ? .green : .secondary)
                             .multilineTextAlignment(.center)
 
                         if model.wearables.metaSetupStarted && !model.wearables.isRegistered {
                             Button("I verified in Meta AI") {
-                                model.finishedMetaAISetup()
+                                Task {
+                                    await model.wearables.refreshAfterForeground()
+                                    model.finishedMetaAISetup()
+                                }
                             }
                             .font(.footnote)
                             .buttonStyle(.bordered)
                         }
 
+                        Label(model.wearables.cameraGranted ? "2. Glasses camera allowed" : "2. Allow glasses camera",
+                              systemImage: model.wearables.cameraGranted ? "checkmark.circle.fill" : "circle")
+
                         Button("2. Allow glasses camera") {
                             model.allowGlassesCamera()
                         }
                         .buttonStyle(.bordered)
-                        .disabled(model.metaBlocked || !model.wearables.metaSetupStarted && !model.wearables.isRegistered)
+                        .disabled(model.metaBlocked || model.wearables.cameraGranted
+                                  || (!model.wearables.metaSetupStarted && !model.wearables.isRegistered))
 
                         Text(model.wearables.cameraLabel)
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(model.wearables.cameraGranted ? .green : .secondary)
                             .multilineTextAlignment(.center)
 
                         Button("Add glasses web app (digit pad)") {
@@ -323,6 +356,11 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
 
+                    Text("Keep this app open on the pairing code while entering the code on glasses & desktop.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+
                     Text("3. Start relay → code on desktop & glasses\n4. Tap Live Stream on glasses")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -336,8 +374,13 @@ struct ContentView: View {
                 model.start()
             }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active {
+                switch phase {
+                case .active:
                     model.onReturnFromBackground()
+                case .background:
+                    model.onEnterBackground()
+                default:
+                    break
                 }
             }
         }

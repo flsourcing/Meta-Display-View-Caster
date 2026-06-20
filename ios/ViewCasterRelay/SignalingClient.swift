@@ -14,6 +14,13 @@ final class SignalingClient: ObservableObject {
     private var pingTask: Task<Void, Never>?
     private var connectTask: Task<Void, Never>?
     private var registerTask: Task<Void, Never>?
+    private var savedSessionId: String? {
+        get { UserDefaults.standard.string(forKey: "relaySessionId") }
+        set {
+            if let newValue { UserDefaults.standard.set(newValue, forKey: "relaySessionId") }
+            else { UserDefaults.standard.removeObject(forKey: "relaySessionId") }
+        }
+    }
 
     var onStartStream: (() -> Void)?
     var onStopStream: (() -> Void)?
@@ -42,6 +49,11 @@ final class SignalingClient: ObservableObject {
         desktopLinked = false
         glassesLinked = false
         status = "Offline"
+    }
+
+    func disconnectAndClearSession() {
+        savedSessionId = nil
+        disconnect()
     }
 
     /// Tear down socket/tasks only — do not cancel the active connect task.
@@ -156,7 +168,9 @@ final class SignalingClient: ObservableObject {
         registerTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 300_000_000)
             while !Task.isCancelled && !connected {
-                send(["type": "register-relay"])
+                var payload: [String: Any] = ["type": "register-relay"]
+                if let savedSessionId { payload["sessionId"] = savedSessionId }
+                send(payload)
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
@@ -205,11 +219,18 @@ final class SignalingClient: ObservableObject {
         switch type {
         case "relay-registered", "code-rotated":
             if let c = json["code"] as? String { code = c }
+            if let sid = json["sessionId"] as? String { savedSessionId = sid }
             connected = true
             status = "Ready — connect desktop & glasses"
             registerTask?.cancel()
             registerTask = nil
             startPing()
+        case "relay-offline":
+            status = json["message"] as? String ?? "Relay paused — keep app open"
+        case "relay-online":
+            connected = true
+            if let c = json["code"] as? String { code = c }
+            status = "Phone relay back online"
         case "desktop-joined":
             desktopLinked = true
             status = "Desktop connected"
