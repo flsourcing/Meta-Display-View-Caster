@@ -5,33 +5,41 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>View Caster — Phone Relay</title>
-  <link rel="stylesheet" href="css/style.css?v=13">
+  <link rel="stylesheet" href="css/style.css?v=14">
 </head>
 <body>
   <div class="container">
     <header>
       <h1>Phone Relay</h1>
-      <p>Start here on your phone. This page only shows the pairing code.</p>
+      <p>Start here on your phone. <strong>Keep this page open</strong> until glasses show Connected.</p>
     </header>
 
     <div id="pairing-view" class="card">
       <p class="code-timer">Your pairing code</p>
-      <div id="pair-code" class="pair-code" style="font-size:2.5rem;font-family:var(--mono);letter-spacing:0.15em;text-align:center;padding:1rem 0;">······</div>
-      <p id="code-timer" class="code-timer">Updating…</p>
+      <div id="pair-code" class="pair-code relay-code">······</div>
+      <p id="code-timer" class="code-timer">Starting relay…</p>
+      <p class="network-status"><span id="network-dot" class="network-dot offline"></span> Relay network</p>
       <p id="keep-open-hint" class="message" style="margin-top:0.75rem;"></p>
       <p class="message" style="margin-top:0.5rem;"><a id="desktop-link" href="./">Open desktop viewer with code</a></p>
-      <p class="message" style="margin-top:0.5rem;"><a id="capture-link" href="capture.html">Open camera page for streaming</a></p>
+      <p class="message" style="margin-top:0.5rem;"><a id="capture-link" href="capture.html">Open camera page (for streaming only)</a></p>
       <div id="status" class="status waiting" style="margin-top:1rem;">
         <span class="status-dot"></span>
         <span id="status-text">Starting…</span>
       </div>
     </div>
+
+    <div id="connected-view" class="card hidden">
+      <p id="connected-label" class="connected-label">Connected</p>
+      <p>Session code: <strong id="session-code"></strong></p>
+      <p id="stream-hint" class="message"></p>
+    </div>
   </div>
 
   <footer><a href="./">Desktop viewer</a> · <a href="glasses.html">Glasses</a></footer>
 
-  <script src="config.js?v=13"></script>
-  <script src="js/signaling.js?v=13"></script>
-  <script src="js/relay.js?v=13"></script>
+  <script src="js/peerjs.min.js?v=14"></script>
+  <script src="config.js?v=14"></script>
+  <script src="js/signaling.js?v=14"></script>
+  <script src="js/relay.js?v=14"></script>
 </body>
 </html>

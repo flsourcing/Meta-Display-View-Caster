@@ -323,6 +323,35 @@ body.glasses .digit-btn:focus {
   outline-offset: 2px;
 }
 
+.relay-code {
+  font-size: 2.5rem;
+  font-family: var(--mono);
+  letter-spacing: 0.15em;
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.network-status {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 0.5rem;
+}
+
+.network-dot {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+  background: var(--error);
+}
+
+.network-dot.online {
+  background: var(--success);
+}
+
 body.glasses .glasses-stream-btn:focus {
   outline: 3px solid var(--accent);
   outline-offset: 2px;

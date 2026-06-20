@@ -2,7 +2,7 @@
  * PeerJS pairing + WebRTC — runs entirely from GitHub Pages.
  */
 
-const APP_VERSION = '13';
+const APP_VERSION = '14';
 
 function generateCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -56,7 +56,25 @@ function waitForConnection(conn, ms = 30000) {
     conn.once('open', () => res(conn));
     conn.once('error', rej);
     conn.once('close', () => rej(new Error('Connection closed.')));
-  }), ms, 'Could not find that session. Connect desktop first with the same code, then try again.');
+  }), ms, 'Could not find phone relay. Keep relay.html open on your phone, then try again.');
+}
+
+function waitForRelayAck(conn, ms = 25000) {
+  return withTimeout(new Promise((resolve, reject) => {
+    function onData(msg) {
+      if (msg?.type === 'relay-ack') {
+        conn.off('data', onData);
+        conn.off('close', onClose);
+        resolve(msg);
+      }
+    }
+    function onClose() {
+      conn.off('data', onData);
+      reject(new Error('Connection to phone relay closed.'));
+    }
+    conn.on('data', onData);
+    conn.on('close', onClose);
+  }), ms, 'Phone relay did not respond. Keep relay.html open and try again.');
 }
 
 function createPeer(id) {
@@ -95,5 +113,6 @@ window.CasterSignaling = {
   createPeerWithRetry,
   waitForPeerOpen,
   waitForConnection,
+  waitForRelayAck,
   sendData,
 };

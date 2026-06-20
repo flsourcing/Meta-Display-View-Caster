@@ -22,5 +22,15 @@ window.CASTER_CONFIG = {
       username: 'openrelayproject',
       credential: 'openrelayproject',
     },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'],
+      username: 'peerjs',
+      credential: 'peerjsp',
+    },
   ],
 };

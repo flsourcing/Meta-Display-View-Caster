@@ -1,5 +1,5 @@
 /**
- * Desktop viewer — hosts the pairing session (stays online while tab is open).
+ * Desktop viewer — connects to phone relay.
  */
 (function () {
   const els = {
@@ -17,12 +17,9 @@
   };
 
   let peer = null;
-  let glassesConn = null;
-  let camConn = null;
+  let dataConn = null;
   let activeCall = null;
-  let sessionCode = '';
-  let hosting = false;
-  let glassesLinked = false;
+  let connected = false;
   let connecting = false;
 
   const params = new URLSearchParams(location.search);
@@ -47,8 +44,8 @@
   function showViewer(code) {
     els.connectSection.classList.add('hidden');
     els.viewerSection.classList.remove('hidden');
-    setViewerStatus('waiting', 'Session live — connect glasses with same code');
-    els.captureHint.innerHTML = `Before streaming: open <a href="capture.html?code=${code}" target="_blank" rel="noopener">capture.html?code=${code}</a> on your phone.`;
+    setViewerStatus('connected', 'Connected to phone relay — connect glasses');
+    els.captureHint.innerHTML = `When streaming: open <a href="capture.html?code=${code}" target="_blank" rel="noopener">capture.html?code=${code}</a> on your phone and allow camera.`;
   }
 
   function cleanupCall() {
@@ -59,17 +56,12 @@
   }
 
   function resetToConnect() {
-    hosting = false;
-    glassesLinked = false;
+    connected = false;
     connecting = false;
     cleanupCall();
-    camConn?.close();
-    camConn = null;
-    glassesConn?.close();
-    glassesConn = null;
+    dataConn?.close();
     peer?.destroy();
     peer = null;
-    sessionCode = '';
     els.viewerSection.classList.add('hidden');
     els.connectSection.classList.remove('hidden');
     els.connectBtn.disabled = false;
@@ -78,28 +70,6 @@
   }
 
   function setupPeer() {
-    peer.on('connection', (conn) => {
-      conn.on('data', (msg) => {
-        if (msg?.type === 'hello' && msg.role === 'glasses') {
-          glassesConn = conn;
-          glassesLinked = true;
-          setViewerStatus('connected', 'Connected — tap Live Stream on glasses');
-          CasterSignaling.sendData(conn, { type: 'relay-ack', role: 'glasses' });
-        }
-        if (msg?.type === 'start-stream') startCamBridge();
-        if (msg?.type === 'stop-stream') stopCamBridge(true);
-      });
-      conn.on('close', () => {
-        if (conn === glassesConn) {
-          glassesConn = null;
-          glassesLinked = false;
-          if (hosting) {
-            setViewerStatus('waiting', 'Glasses disconnected — reconnect with same code');
-          }
-        }
-      });
-    });
-
     peer.on('call', (call) => {
       activeCall = call;
       call.answer();
@@ -110,50 +80,24 @@
       });
       call.on('close', cleanupCall);
     });
+  }
 
-    peer.on('disconnected', () => {
-      if (hosting) {
-        try { peer.reconnect(); } catch { /* retry below */ }
+  function bindRelayMessages() {
+    dataConn.on('data', (msg) => {
+      if (msg?.type === 'stream-started') {
+        setViewerStatus('connected', 'Stream starting…');
+      }
+      if (msg?.type === 'stop-stream') {
+        cleanupCall();
+        setViewerStatus('connected', 'Connected — tap Live Stream on glasses');
       }
     });
-
-    peer.on('close', () => {
-      if (hosting && !peer.destroyed) {
-        setTimeout(() => {
-          if (hosting && sessionCode) connect(sessionCode, true);
-        }, 2000);
-      }
-    });
+    dataConn.on('close', () => { if (connected) resetToConnect(); });
   }
 
-  async function startCamBridge() {
-    if (!sessionCode) return;
-    camConn?.close();
-    camConn = peer.connect(CasterSignaling.camPeerIdForCode(sessionCode), { reliable: true });
-    try {
-      await CasterSignaling.waitForConnection(camConn, 15000);
-      CasterSignaling.sendData(camConn, { type: 'start-stream', desktopPeerId: peer.id });
-      CasterSignaling.sendData(glassesConn, { type: 'stream-started' });
-    } catch {
-      setViewerStatus('error', 'Open capture.html on your phone first');
-      CasterSignaling.sendData(glassesConn, { type: 'stop-stream' });
-    }
-  }
-
-  function stopCamBridge(notifyGlasses) {
-    if (camConn?.open) {
-      CasterSignaling.sendData(camConn, { type: 'stop-stream' });
-    }
-    camConn?.close();
-    camConn = null;
-    cleanupCall();
-    if (notifyGlasses) CasterSignaling.sendData(glassesConn, { type: 'stop-stream' });
-    if (glassesLinked) setViewerStatus('connected', 'Connected — tap Live Stream on glasses');
-  }
-
-  async function connect(codeOverride, isReconnect = false) {
+  async function connect() {
     if (connecting) return;
-    const code = (codeOverride || els.codeInput.value).replace(/\D/g, '').slice(0, 6);
+    const code = els.codeInput.value.replace(/\D/g, '').slice(0, 6);
     if (code.length !== 6) {
       showError('Enter the 6-digit code from relay.html on your phone.');
       return;
@@ -162,7 +106,7 @@
     connecting = true;
     els.connectBtn.disabled = true;
     showError('');
-    setStatus('waiting', isReconnect ? 'Reconnecting session…' : 'Starting session…');
+    setStatus('waiting', 'Connecting…');
 
     const maxAttempts = 5;
     let lastError;
@@ -170,34 +114,36 @@
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
         peer?.destroy();
-        peer = CasterSignaling.createPeer(CasterSignaling.peerIdForCode(code));
+        peer = await CasterSignaling.createPeerWithRetry();
         setupPeer();
-        setStatus('waiting', `Registering session… (${attempt}/${maxAttempts})`);
-        await CasterSignaling.waitForPeerOpen(peer, 45000);
+        setStatus('waiting', `Finding phone relay… (${attempt}/${maxAttempts})`);
 
-        sessionCode = code;
-        hosting = true;
+        dataConn = peer.connect(CasterSignaling.peerIdForCode(code), { reliable: true });
+        await CasterSignaling.waitForConnection(dataConn, 45000);
+        bindRelayMessages();
+        CasterSignaling.sendData(dataConn, { type: 'hello', role: 'desktop', peerId: peer.id });
+        await CasterSignaling.waitForRelayAck(dataConn);
+
+        connected = true;
         connecting = false;
         showViewer(code);
-        setStatus('connected', 'Session live — now connect glasses');
         showError('');
         return;
       } catch (err) {
         lastError = err;
-        console.warn(`host attempt ${attempt}`, err);
+        console.warn(`connect attempt ${attempt}`, err);
         if (attempt < maxAttempts) {
-          setStatus('waiting', `Retrying… (${attempt + 1}/${maxAttempts})`);
-          await new Promise((r) => setTimeout(r, 2000));
+          setStatus('waiting', `Retrying… keep relay.html open on phone (${attempt + 1}/${maxAttempts})`);
+          await new Promise((r) => setTimeout(r, 3000));
         }
       }
     }
 
     connecting = false;
-    hosting = false;
     showError(
       lastError?.message
-        ? `${lastError.message} Check internet and try again.`
-        : 'Could not start session. Check internet and try again.',
+        ? `${lastError.message} Keep relay.html open on your phone and try again.`
+        : 'Connection failed. Keep relay.html open on your phone and try again.',
     );
     els.connectBtn.disabled = false;
     setStatus('waiting', 'Enter code from phone relay');
@@ -205,7 +151,7 @@
     peer = null;
   }
 
-  els.connectBtn.addEventListener('click', () => connect());
+  els.connectBtn.addEventListener('click', connect);
   els.codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); });
   els.codeInput.addEventListener('input', () => {
     els.codeInput.value = els.codeInput.value.replace(/\D/g, '').slice(0, 6);
@@ -213,5 +159,5 @@
 
   setStatus('waiting', 'Enter code from phone relay');
 
-  if (urlCode?.length === 6) connect(urlCode);
+  if (urlCode?.length === 6) connect();
 })();
