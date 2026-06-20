@@ -8,6 +8,9 @@ struct ViewCasterRelayApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(model)
+                .onOpenURL { url in
+                    Task { await model.handleMetaCallback(url) }
+                }
         }
     }
 }

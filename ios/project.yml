@@ -11,21 +11,30 @@ packages:
   WebRTC:
     url: https://github.com/stasel/WebRTC.git
     majorVersion: 124.0.0
+  MWDAT:
+    url: https://github.com/facebook/meta-wearables-dat-ios
+    from: 0.7.0
 targets:
   ViewCasterRelay:
     type: application
     platform: iOS
     sources:
       - path: ViewCasterRelay
+    info:
+      path: ViewCasterRelay/Info.plist
+      properties:
+        CFBundleDisplayName: View Caster Relay
+        UILaunchScreen: {}
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mdvc.viewcasterrelay
-        INFOPLIST_KEY_CFBundleDisplayName: View Caster Relay
-        INFOPLIST_KEY_NSCameraUsageDescription: Camera is used to stream your view to the desktop when you tap Live Stream on glasses.
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
         DEVELOPMENT_TEAM: ""
         PROVISIONING_PROFILE_SPECIFIER: ""
     dependencies:
       - package: WebRTC
+      - package: MWDAT
+        product: MWDATCore
+      - package: MWDAT
+        product: MWDATCamera

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.mdvc.viewcasterrelay</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>viewcaster</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>fb-viewapp</string>
+	</array>
+	<key>MWDAT</key>
+	<dict>
+		<key>AppLinkURLScheme</key>
+		<string>viewcaster://</string>
+		<key>MetaAppID</key>
+		<string>0</string>
+		<key>DAMEnabled</key>
+		<true/>
+	</dict>
+	<key>UISupportedExternalAccessoryProtocols</key>
+	<array>
+		<string>com.meta.ar.wearable</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-peripheral</string>
+		<string>external-accessory</string>
+	</array>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Connect to Meta Display glasses for live view streaming.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Fallback phone camera if glasses stream is unavailable.</string>
+</dict>
+</plist>

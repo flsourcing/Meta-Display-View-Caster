@@ -1,5 +1,9 @@
 import Foundation
 import WebRTC
+import CoreMedia
+import MWDATCamera
+
+final class FrameCapturer: RTCVideoCapturer {}
 
 final class WebRTCManager: NSObject {
     private static let factory: RTCPeerConnectionFactory = {
@@ -8,8 +12,8 @@ final class WebRTCManager: NSObject {
     }()
 
     private var pc: RTCPeerConnection?
-    private var capturer: RTCCameraVideoCapturer?
     private var videoSource: RTCVideoSource?
+    private var frameCapturer: FrameCapturer?
     private var localVideoTrack: RTCVideoTrack?
     private weak var signaling: SignalingClient?
 
@@ -29,11 +33,9 @@ final class WebRTCManager: NSObject {
         pc = Self.factory.peerConnection(with: config, constraints: constraints, delegate: self)
 
         videoSource = Self.factory.videoSource()
-        capturer = RTCCameraVideoCapturer(delegate: videoSource!)
+        frameCapturer = FrameCapturer()
         localVideoTrack = Self.factory.videoTrack(with: videoSource!, trackId: "video0")
         pc?.add(localVideoTrack!, streamIds: ["stream0"])
-
-        startCamera()
 
         let offerConstraints = RTCMediaConstraints(
             mandatoryConstraints: ["OfferToReceiveAudio": "false", "OfferToReceiveVideo": "false"],
@@ -50,21 +52,23 @@ final class WebRTCManager: NSObject {
         }
     }
 
+    func pushGlassesFrame(_ frame: VideoFrame) {
+        guard let videoSource, let frameCapturer else { return }
+        let sampleBuffer = frame.sampleBuffer
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let rtcBuffer = RTCCVPixelBuffer(pixelBuffer: pixelBuffer)
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let timeStampNs = Int64(CMTimeGetSeconds(pts) * 1_000_000_000)
+        let videoFrame = RTCVideoFrame(buffer: rtcBuffer, rotation: ._0, timeStampNs: timeStampNs)
+        videoSource.capturer(frameCapturer, didCapture: videoFrame)
+    }
+
     func stopStream() {
-        capturer?.stopCapture()
-        capturer = nil
+        frameCapturer = nil
         localVideoTrack = nil
         videoSource = nil
         pc?.close()
         pc = nil
-    }
-
-    private func startCamera() {
-        guard let capturer else { return }
-        guard let device = RTCCameraVideoCapturer.captureDevices().first(where: { $0.position == .back })
-            ?? RTCCameraVideoCapturer.captureDevices().first else { return }
-        guard let format = RTCCameraVideoCapturer.supportedFormats(for: device).last else { return }
-        capturer.startCapture(with: device, format: format, fps: 30)
     }
 }
 
@@ -73,11 +77,8 @@ extension WebRTCManager: RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
-
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {}
-
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
-
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
         Task { @MainActor in
             signaling?.sendIceCandidate(
@@ -87,8 +88,6 @@ extension WebRTCManager: RTCPeerConnectionDelegate {
             )
         }
     }
-
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
-
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
 }

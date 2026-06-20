@@ -47,8 +47,8 @@
     </header>
 
     <div class="card">
-      <h2 style="font-size:1.1rem;margin-bottom:0.75rem;">Option A — Profile (recommended)</h2>
-      <p class="message">On your iPhone, tap the button below. iOS will ask to review and install a profile, then add <strong>View Caster</strong> to your home screen.</p>
+      <h2 style="font-size:1.1rem;margin-bottom:0.75rem;">Option A — Profile (phone camera)</h2>
+      <p class="message">Quick install — no PC after setup. Uses your <strong>iPhone camera</strong> for the live stream (not glasses POV).</p>
 
       <a class="install-btn" href="view-caster.mobileconfig">Install View Caster Profile</a>
 
@@ -64,16 +64,15 @@
     </div>
 
     <div class="card" style="margin-top:1rem;">
-      <h2 style="font-size:1.1rem;margin-bottom:0.75rem;">Option B — Native app (best camera)</h2>
-      <p class="message">For the full relay app with native camera, download the IPA and sideload with <a href="https://sideloadly.io">Sideloadly</a> on a PC.</p>
+      <h2 style="font-size:1.1rem;margin-bottom:0.75rem;">Option B — Native app (glasses camera)</h2>
+      <p class="message">Streams from <strong>Meta glasses camera</strong> (not iPhone). Opens Meta AI for app connection + camera permission. Requires sideloading.</p>
       <a class="install-btn secondary" href="https://github.com/flsourcing/Meta-Display-View-Caster/releases/latest">Download IPA (GitHub Releases)</a>
-      <p class="note">iOS cannot install unsigned IPAs from a profile link alone — Sideloadly re-signs with your Apple ID. The profile (Option A) works without a computer but uses the web relay.</p>
+      <p class="note">After Sideloadly: tap <strong>Connect Meta AI</strong> → <strong>Allow glasses camera</strong> → Start relay. Enable Developer Mode in Meta AI (Settings → App Info → tap version 5×).</p>
     </div>
 
     <div class="card" style="margin-top:1rem;">
-      <p class="message"><strong>First open:</strong> tap <strong>Open Meta AI</strong> → add View Caster web app on glasses → allow camera → you’ll see a pairing code.</p>
-      <p class="message"><strong>Each session:</strong> enter the code on glasses (View Caster app) and desktop → tap <strong>Live Stream</strong> on glasses to cast to desktop.</p>
-      <p class="note">If setup doesn’t appear, tap <strong>Run setup again</strong> inside the app. Live video uses your phone camera relayed to the desktop.</p>
+      <p class="message"><strong>After profile install:</strong> Connect Meta AI → add glasses web app → allow phone camera → enter code on desktop &amp; glasses → Live Stream.</p>
+      <p class="note">Deploy the signaling server once: <a href="deploy-server.html">deploy-server.html</a></p>
     </div>
   </div>
 
