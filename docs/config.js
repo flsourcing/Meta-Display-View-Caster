@@ -1,11 +1,18 @@
 /**
- * Meta Display View Caster — config
+ * GitHub Pages only — no external server. PeerJS public cloud handles pairing.
  */
 window.CASTER_CONFIG = {
-  // WebSocket signaling server (Render — see README to deploy)
-  SIGNALING_URL: 'wss://meta-display-view-caster.onrender.com',
+  PEER_PREFIX: 'mdvc-',
+  CAM_PREFIX: 'mdvc-cam-',
+  CODE_ROTATION_MS: 300_000,
 
-  CODE_ROTATION_MS: 180_000,
+  PEERJS: {
+    host: '0.peerjs.com',
+    port: 443,
+    path: '/',
+    secure: true,
+    key: 'peerjs',
+  },
 
   ICE_SERVERS: [
     { urls: 'stun:stun.l.google.com:19302' },

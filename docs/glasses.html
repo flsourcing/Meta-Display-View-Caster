@@ -4,53 +4,82 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=600, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
   <title>View Caster — Glasses</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👓</text></svg>">
-  <link rel="stylesheet" href="css/style.css?v=7">
+  <link rel="stylesheet" href="css/style.css?v=8">
 </head>
 <body class="glasses">
   <div class="container">
-    <header>
-      <h1>View Caster</h1>
-    </header>
+    <header><h1>View Caster</h1></header>
 
     <div id="pairing-view">
-      <p class="code-timer" style="margin-bottom: 0.5rem;">Your pairing code</p>
+      <p class="code-timer">Enter code from phone relay</p>
       <div id="pair-code" class="pair-code" aria-live="polite">------</div>
-      <p id="code-timer" class="code-timer">Connecting…</p>
+      <p id="code-timer" class="code-timer">Open relay.html on your phone first</p>
 
-      <div id="status" class="status waiting">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span id="status-text">Waiting for pairing</span>
+      <div id="code-form" class="card" style="margin-top:1rem;padding:1rem;">
+        <div id="digit-display" style="font-family:var(--mono);font-size:2rem;letter-spacing:0.2em;text-align:center;margin-bottom:1rem;">------</div>
+        <div id="digit-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;max-width:280px;margin:0 auto;">
+          <button type="button" class="btn btn-primary digit-btn" data-digit="1" tabindex="0">1</button>
+          <button type="button" class="btn btn-primary digit-btn" data-digit="2" tabindex="0">2</button>
+          <button type="button" class="btn btn-primary digit-btn" data-digit="3" tabindex="0">3</button>
+          <button type="button" class="btn btn-primary digit-btn" data-digit="4" tabindex="0">4</button>
+          <button type="button" class="btn btn-primary digit-btn" data-digit="5" tabindex="0">5</button>
+          <button type="button" class="btn btn-primary digit-btn" data-digit="6" tabindex="0">6</button>
+          <button type="button" class="btn btn-primary digit-btn" data-digit="7" tabindex="0">7</button>
+          <button type="button" class="btn btn-primary digit-btn" data-digit="8" tabindex="0">8</button>
+          <button type="button" class="btn btn-primary digit-btn" data-digit="9" tabindex="0">9</button>
+          <button type="button" class="btn btn-primary digit-btn" data-digit="clear" tabindex="0">Clr</button>
+          <button type="button" class="btn btn-primary digit-btn" data-digit="0" tabindex="0">0</button>
+          <button id="join-btn" type="button" class="btn btn-stream digit-btn" tabindex="0">Go</button>
+        </div>
+        <input id="code-input" type="hidden" value="">
+      </div>
+
+      <div id="status" class="status waiting" style="margin-top:1rem;">
+        <span class="status-dot"></span>
+        <span id="status-text">Waiting</span>
       </div>
     </div>
 
     <div id="connected-view" class="hidden">
       <p id="connected-label" class="connected-label">Connected</p>
-
-      <div id="status-connected" class="status connected">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span>Linked to desktop</span>
-      </div>
-
-      <p id="session-code-label" class="code-timer" style="margin-top: 1rem;">Session code</p>
-      <p id="session-code" class="pair-code" style="font-size: 2rem; padding: 0.5rem 0;" aria-live="polite">------</p>
-
-      <p id="stream-hint" class="code-timer stream-hint">
-        Open capture.html on your phone, then tap Live Stream.
-      </p>
-
-      <button id="stream-btn" class="btn btn-stream glasses-stream-btn" type="button" tabindex="0">
-        Live Stream
-      </button>
+      <p id="session-code" class="pair-code" style="font-size:2rem;padding:0.5rem 0;"></p>
+      <div class="status connected"><span class="status-dot"></span><span>Linked to desktop</span></div>
+      <p id="stream-hint" class="code-timer stream-hint">Tap Live Stream to cast.</p>
+      <button id="stream-btn" class="btn btn-stream glasses-stream-btn" type="button" tabindex="0">Live Stream</button>
     </div>
   </div>
 
   <footer>Meta Display View Caster</footer>
 
-  <script src="config.js?v=7"></script>
-  <script src="js/signaling.js?v=7"></script>
-  <script src="js/glasses.js?v=7"></script>
+  <script src="js/peerjs.min.js?v=8"></script>
+  <script src="config.js?v=8"></script>
+  <script src="js/signaling.js?v=8"></script>
+  <script src="js/glasses.js?v=8"></script>
+  <script>
+    (function () {
+      let digits = '';
+      const display = document.getElementById('digit-display');
+      const hidden = document.getElementById('code-input');
+      const pairCode = document.getElementById('pair-code');
+
+      function render() {
+        const padded = (digits + '------').slice(0, 6);
+        display.textContent = padded;
+        pairCode.textContent = padded;
+        hidden.value = digits;
+      }
+
+      document.querySelectorAll('.digit-btn[data-digit]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const d = btn.dataset.digit;
+          if (d === 'clear') digits = '';
+          else if (digits.length < 6) digits += d;
+          render();
+        });
+        btn.addEventListener('keydown', (e) => { if (e.key === 'Enter') btn.click(); });
+      });
+    })();
+  </script>
 </body>
 </html>

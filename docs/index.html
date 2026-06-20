@@ -4,38 +4,27 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
   <title>Meta Display View Caster</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👓</text></svg>">
-  <link rel="stylesheet" href="css/style.css?v=7">
+  <link rel="stylesheet" href="css/style.css?v=8">
 </head>
 <body>
   <div class="container">
     <header>
       <h1>Meta Display View Caster</h1>
-      <p>Enter the code from your glasses to connect and view the live stream</p>
+      <p>Enter the code from <a href="relay.html">relay.html</a> on your phone</p>
     </header>
 
     <section id="connect-section">
       <div class="card">
         <label for="code-input">Pairing code</label>
-        <input
-          id="code-input"
-          type="text"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          maxlength="6"
-          placeholder="000000"
-          aria-label="6-digit pairing code from glasses"
-        >
+        <input id="code-input" type="text" inputmode="numeric" maxlength="6" placeholder="000000">
         <button id="connect-btn" class="btn btn-primary" type="button">Connect</button>
         <p id="error-msg" class="message" role="alert"></p>
       </div>
-
-      <div class="card" style="margin-top: 1rem;">
+      <div class="card" style="margin-top:1rem;">
         <div id="status" class="status waiting">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span id="status-text">Enter code from glasses</span>
+          <span class="status-dot"></span>
+          <span id="status-text">Enter code from phone relay</span>
         </div>
       </div>
     </section>
@@ -43,29 +32,27 @@
     <section id="viewer-section" class="hidden">
       <div class="card">
         <div id="status-viewer" class="status connected">
-          <span class="status-dot" aria-hidden="true"></span>
+          <span class="status-dot"></span>
           <span>Connected to glasses</span>
         </div>
-
         <div class="video-wrap">
-          <video id="remote-video" autoplay playsinline muted aria-label="Live stream from glasses"></video>
-          <div id="video-placeholder" class="video-placeholder">
-            Waiting for Live Stream from glasses…
-          </div>
+          <video id="remote-video" autoplay playsinline muted></video>
+          <div id="video-placeholder" class="video-placeholder">Waiting for Live Stream from glasses…</div>
         </div>
-
-        <p id="capture-hint" class="message" style="margin-top: 1rem;"></p>
+        <p id="capture-hint" class="message" style="margin-top:1rem;"></p>
       </div>
     </section>
   </div>
 
   <footer>
-    Open <a href="glasses.html">glasses.html</a> on your Meta Display glasses.
-    For camera streaming, also open <a href="capture.html">capture.html</a> on your phone.
+    <strong>Step 1:</strong> <a href="relay.html">relay.html</a> on phone ·
+    <strong>Step 2:</strong> connect here ·
+    <strong>Step 3:</strong> <a href="glasses.html">glasses.html</a> for Live Stream
   </footer>
 
-  <script src="config.js?v=7"></script>
-  <script src="js/signaling.js?v=7"></script>
-  <script src="js/desktop.js?v=7"></script>
+  <script src="js/peerjs.min.js?v=8"></script>
+  <script src="config.js?v=8"></script>
+  <script src="js/signaling.js?v=8"></script>
+  <script src="js/desktop.js?v=8"></script>
 </body>
 </html>

@@ -1,39 +1,30 @@
 # Meta Display View Caster
 
-Cast the live view from your Meta Display glasses to a desktop browser.
+Everything runs on **GitHub Pages** — no Render, no external server.
 
-## Live site
+## URLs
 
-| Page | URL | Device |
-|------|-----|--------|
-| Desktop viewer | https://flsourcing.github.io/Meta-Display-View-Caster/ | Computer |
-| Glasses app | https://flsourcing.github.io/Meta-Display-View-Caster/glasses.html | Meta Display glasses |
-| Phone camera | https://flsourcing.github.io/Meta-Display-View-Caster/capture.html | iPhone / Android |
-
-## One-time setup: deploy the signaling server
-
-GitHub Pages serves the UI only. Pairing requires a small WebSocket server (free on Render):
-
-1. Go to [render.com](https://render.com) and sign in with GitHub.
-2. Click **New → Blueprint** and connect repo `flsourcing/Meta-Display-View-Caster`.
-3. Render reads `render.yaml` and deploys the server automatically.
-4. Copy your service URL (e.g. `https://meta-display-view-caster.onrender.com`).
-5. Edit `docs/config.js` — set `SIGNALING_URL` to `wss://your-service.onrender.com` and push.
-
-The config already points to `wss://meta-display-view-caster.onrender.com` — if you name your Render service that, it works out of the box.
-
-> **Note:** Render free tier sleeps after inactivity. The app wakes it automatically — wait ~30 seconds on first connect.
+| Step | Page | Device |
+|------|------|--------|
+| 1 | [relay.html](https://flsourcing.github.io/Meta-Display-View-Caster/relay.html) | **Phone** — start here, get code |
+| 2 | [index.html](https://flsourcing.github.io/Meta-Display-View-Caster/) | **Desktop** — enter code, connect |
+| 3 | [glasses.html](https://flsourcing.github.io/Meta-Display-View-Caster/glasses.html) | **Meta glasses** — enter same code, tap Live Stream |
+| 4 | [capture.html](https://flsourcing.github.io/Meta-Display-View-Caster/capture.html) | **Phone** — camera (auto-opens from relay) |
 
 ## How to use
 
-1. **Glasses** — open `glasses.html`, wait for **"Ready — enter this code on desktop"**
-2. **Desktop** — open the viewer, enter the code, click **Connect**
-3. **Phone** — open `capture.html?code=XXXXXX` (same code), tap **Join session**
-4. **Glasses** — tap **Live Stream**
+1. **Phone** — open `relay.html`, wait for **Ready — enter this code on desktop**
+2. **Desktop** — open the viewer, type the code, click **Connect**
+3. **Glasses** — open `glasses.html`, enter the same code with the digit pad, tap **Go**
+4. **Phone** — open the `capture.html` link shown on relay, allow camera
+5. **Glasses** — tap **Live Stream**
 
-## Meta Display camera note
+Pairing uses [PeerJS](https://peerjs.com) in the browser (free public cloud). Your phone hosts the session because Meta Display can't reliably register on its own.
 
-[Glasses web apps cannot access the camera](https://wearables.developer.meta.com/docs/develop/webapps/build). Use `capture.html` on your phone for the video feed.
+## Add to Meta Display
+
+Meta AI app → Display Glasses → Web apps → Add:
+`https://flsourcing.github.io/Meta-Display-View-Caster/glasses.html`
 
 ## License
 

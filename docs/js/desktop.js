@@ -1,7 +1,6 @@
 /**
- * Desktop viewer — enter code, connect, receive live stream
+ * Desktop viewer
  */
-
 (function () {
   const els = {
     connectSection: document.getElementById('connect-section'),
@@ -17,8 +16,9 @@
     captureHint: document.getElementById('capture-hint'),
   };
 
-  let ws = null;
-  let pc = null;
+  let peer = null;
+  let dataConn = null;
+  let activeCall = null;
   let connected = false;
   let connecting = false;
 
@@ -40,126 +40,83 @@
   function showViewer(code) {
     els.connectSection.classList.add('hidden');
     els.viewerSection.classList.remove('hidden');
-    setStatus('connected', 'Connected to glasses');
-    setViewerStatus('connected', 'Connected — open capture.html on phone, tap Live Stream on glasses');
-    els.captureHint.innerHTML = `Open <a href="capture.html?code=${code}">capture.html</a> on your phone with code <strong>${code}</strong>, then tap Live Stream on glasses.`;
+    setViewerStatus('connected', 'Connected — tap Live Stream on glasses');
+    els.captureHint.innerHTML = `Phone camera: open <a href="capture.html?code=${code}">capture.html?code=${code}</a>`;
   }
 
   function cleanupCall() {
-    pc?.close();
-    pc = null;
+    activeCall?.close();
+    activeCall = null;
     els.remoteVideo.srcObject = null;
     els.videoPlaceholder.classList.remove('hidden');
-    if (connected) setViewerStatus('connected', 'Connected — tap Live Stream on glasses');
   }
 
   function resetToConnect() {
     connected = false;
     connecting = false;
     cleanupCall();
-    ws?.close();
-    ws = null;
+    dataConn?.close();
+    peer?.destroy();
+    peer = null;
     els.viewerSection.classList.add('hidden');
     els.connectSection.classList.remove('hidden');
     els.connectBtn.disabled = false;
-    setStatus('waiting', 'Enter code from glasses');
+    setStatus('waiting', 'Enter code from phone relay');
     showError('');
   }
 
-  function ensurePc() {
-    if (pc) return pc;
-    pc = CasterSignaling.createPeerConnection(
-      (e) => {
-        if (e.streams?.[0]) {
-          els.remoteVideo.srcObject = e.streams[0];
-          els.videoPlaceholder.classList.add('hidden');
-          setViewerStatus('connected', 'Live stream active');
-        }
-      },
-      (c) => CasterSignaling.send(ws, { type: 'ice-candidate', candidate: c }),
-    );
-    return pc;
-  }
-
-  function handleMessage(msg) {
-    switch (msg.type) {
-      case 'paired':
-        connected = true;
-        connecting = false;
-        showViewer(msg.code || els.codeInput.value);
-        showError('');
-        break;
-      case 'error':
-        if (connecting) throw new Error(msg.message);
-        showError(msg.message);
-        break;
-      case 'disconnected':
-        showError(msg.message || 'Disconnected.');
-        resetToConnect();
-        break;
-      case 'offer':
-        handleOffer(msg.offer);
-        break;
-      case 'stream-started':
-        setViewerStatus('connected', 'Receiving live stream…');
-        break;
-      case 'stop-stream':
-        cleanupCall();
-        break;
-      case 'ice-candidate':
-        if (pc && msg.candidate) pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(console.error);
-        break;
-    }
-  }
-
-  async function handleOffer(offer) {
-    const peer = ensurePc();
-    await peer.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await peer.createAnswer();
-    await peer.setLocalDescription(answer);
-    CasterSignaling.send(ws, { type: 'answer', answer: peer.localDescription });
+  function setupPeer() {
+    peer.on('call', (call) => {
+      activeCall = call;
+      call.answer();
+      call.on('stream', (s) => {
+        els.remoteVideo.srcObject = s;
+        els.videoPlaceholder.classList.add('hidden');
+        setViewerStatus('connected', 'Live stream active');
+      });
+      call.on('close', cleanupCall);
+    });
   }
 
   async function connect() {
     if (connecting) return;
     const code = els.codeInput.value.replace(/\D/g, '').slice(0, 6);
     if (code.length !== 6) {
-      showError('Enter the 6-digit code shown on your glasses.');
+      showError('Enter the 6-digit code from relay.html on your phone.');
       return;
     }
 
-    showError('');
     connecting = true;
     els.connectBtn.disabled = true;
-    setStatus('waiting', 'Waking server…');
+    showError('');
+    setStatus('waiting', 'Connecting…');
 
-    try {
-      await CasterSignaling.wakeServer();
-      setStatus('waiting', 'Connecting…');
-
-      ws = CasterSignaling.createSignalingConnection(handleMessage, () => {
-        if (connected) resetToConnect();
-      });
-
-      await CasterSignaling.waitForOpen(ws);
-      CasterSignaling.send(ws, { type: 'pair', code });
-
-      const paired = await CasterSignaling.waitForMessage(ws, 'paired');
-      connected = true;
-      connecting = false;
-      showViewer(paired.code || code);
-      showError('');
-    } catch (err) {
-      console.error('[caster] connect failed:', err);
-      connecting = false;
-      const msg = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')
-        ? 'Signaling server not reachable. Deploy it on Render (see GitHub README), wait 1 minute, then try again.'
-        : (err.message || 'Could not connect. Wait for "Ready" on glasses, then enter the current code.');
-      showError(msg);
-      els.connectBtn.disabled = false;
-      setStatus('waiting', 'Enter code from glasses');
-      ws?.close();
-      ws = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        peer?.destroy();
+        peer = await CasterSignaling.createPeerWithRetry();
+        setupPeer();
+        setStatus('waiting', attempt > 1 ? `Finding relay… (${attempt}/3)` : 'Finding relay…');
+        dataConn = peer.connect(CasterSignaling.peerIdForCode(code), { reliable: true });
+        await CasterSignaling.waitForConnection(dataConn);
+        dataConn.on('close', () => { if (connected) resetToConnect(); });
+        CasterSignaling.sendData(dataConn, { type: 'hello', peerId: peer.id });
+        connected = true;
+        connecting = false;
+        showViewer(code);
+        return;
+      } catch (err) {
+        console.warn(`attempt ${attempt}`, err);
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 2000));
+        else {
+          connecting = false;
+          showError(err.message);
+          els.connectBtn.disabled = false;
+          setStatus('waiting', 'Enter code from phone relay');
+          peer?.destroy();
+          peer = null;
+        }
+      }
     }
   }
 
@@ -169,5 +126,5 @@
     els.codeInput.value = els.codeInput.value.replace(/\D/g, '').slice(0, 6);
   });
 
-  setStatus('waiting', 'Enter code from glasses');
+  setStatus('waiting', 'Enter code from phone relay');
 })();

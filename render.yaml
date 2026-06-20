@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: meta-display-view-caster
-    runtime: node
-    rootDir: server
-    buildCommand: npm install
-    startCommand: npm start
-    plan: free
-    healthCheckPath: /health

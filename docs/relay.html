@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>View Caster — Phone Relay</title>
+  <link rel="stylesheet" href="css/style.css?v=8">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Phone Relay</h1>
+      <p>Start here on your phone. Enter this code on desktop.</p>
+    </header>
+
+    <div id="pairing-view" class="card">
+      <p class="code-timer">Your pairing code</p>
+      <div id="pair-code" class="pair-code" style="font-size:2.5rem;font-family:var(--mono);letter-spacing:0.15em;text-align:center;padding:1rem 0;">······</div>
+      <p id="code-timer" class="code-timer">Connecting…</p>
+      <div id="status" class="status waiting">
+        <span class="status-dot"></span>
+        <span id="status-text">Starting…</span>
+      </div>
+    </div>
+
+    <div id="connected-view" class="card hidden">
+      <p id="connected-label" class="connected-label">Connected</p>
+      <p>Session code: <strong id="session-code"></strong></p>
+      <p id="stream-hint" class="message"></p>
+      <button id="stream-btn" class="btn btn-stream" type="button">Live Stream</button>
+    </div>
+  </div>
+
+  <footer><a href="./">Desktop viewer</a> · <a href="glasses.html">Glasses</a></footer>
+
+  <script src="js/peerjs.min.js?v=8"></script>
+  <script src="config.js?v=8"></script>
+  <script src="js/signaling.js?v=8"></script>
+  <script src="js/relay.js?v=8"></script>
+</body>
+</html>
