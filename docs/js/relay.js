@@ -17,6 +17,7 @@
     desktopLink: document.getElementById('desktop-link'),
     captureLink: document.getElementById('capture-link'),
     networkDot: document.getElementById('network-dot'),
+    relayHint: document.getElementById('relay-hint'),
   };
 
   const ROTATION_MS = window.CASTER_CONFIG?.CODE_ROTATION_MS || 300_000;
@@ -35,6 +36,8 @@
   let registering = false;
   let lastRegisterAt = 0;
   let wakeLock = null;
+  let connectingDesktop = false;
+  let desktopPollInterval = null;
 
   function setStatus(kind, text) {
     els.status.className = `status ${kind}`;
@@ -81,6 +84,45 @@
     const base = pageBase();
     if (els.desktopLink) els.desktopLink.href = `${base}?code=${code}`;
     if (els.captureLink) els.captureLink.href = `${base}capture.html?code=${code}`;
+    if (els.relayHint) {
+      els.relayHint.textContent = `Relay ID: ${CasterSignaling.peerIdForCode(code)}`;
+    }
+  }
+
+  function bindDesktopConn(conn) {
+    conn.on('close', () => {
+      if (conn === desktopConn) {
+        desktopConn = null;
+        desktopPeerId = null;
+        showSessionView();
+      }
+    });
+  }
+
+  async function tryConnectDesktop() {
+    if (connectingDesktop || desktopConn?.open || !peer?.open || !currentCode) return;
+    connectingDesktop = true;
+    let conn;
+    try {
+      conn = peer.connect(CasterSignaling.desktopPeerIdForCode(currentCode), { reliable: true });
+      await CasterSignaling.waitForConnection(conn, 8000);
+      CasterSignaling.sendData(conn, { type: 'hello', role: 'phone-relay', code: currentCode });
+      await CasterSignaling.waitForRelayAck(conn, 6000);
+      desktopConn = conn;
+      desktopPeerId = CasterSignaling.desktopPeerIdForCode(currentCode);
+      bindDesktopConn(conn);
+      showSessionView();
+      setStatus('connected', 'Desktop connected — connect glasses');
+    } catch {
+      try { conn?.close?.(); } catch { /* ignore */ }
+    } finally {
+      connectingDesktop = false;
+    }
+  }
+
+  function startDesktopPolling() {
+    if (desktopPollInterval) return;
+    desktopPollInterval = setInterval(tryConnectDesktop, 2500);
   }
 
   function captureUrl() {
@@ -120,7 +162,8 @@
     if (msg?.type === 'hello') {
       if (msg.role === 'desktop') {
         desktopConn = conn;
-        desktopPeerId = msg.peerId || null;
+        desktopPeerId = msg.peerId || CasterSignaling.desktopPeerIdForCode(currentCode);
+        bindDesktopConn(conn);
         CasterSignaling.sendData(conn, { type: 'relay-ack', role: 'desktop' });
       }
       if (msg.role === 'glasses') {
@@ -160,7 +203,11 @@
 
     peer.on('open', () => {
       setNetworkOnline(true);
-      if (currentCode) setStatus('waiting', 'Ready — enter code on desktop and glasses');
+      if (currentCode) {
+        setStatus('waiting', 'Ready — enter code on desktop and glasses');
+        tryConnectDesktop();
+        startDesktopPolling();
+      }
     });
 
     peer.on('disconnected', () => {
@@ -231,6 +278,8 @@
       showCode(code);
       setNetworkOnline(true);
       setStatus('waiting', 'Ready — enter code on desktop and glasses');
+      tryConnectDesktop();
+      startDesktopPolling();
       clearTimeout(rotationTimeout);
       rotationTimeout = setTimeout(() => {
         if (!desktopConn?.open && !glassesConn?.open) register(CasterSignaling.generateCode());
@@ -246,7 +295,8 @@
   }
 
   async function startCamBridge() {
-    if (!desktopPeerId) {
+    const targetId = desktopPeerId || CasterSignaling.desktopPeerIdForCode(currentCode);
+    if (!targetId) {
       CasterSignaling.sendData(glassesConn, { type: 'stop-stream' });
       return;
     }
@@ -255,7 +305,7 @@
     camConn = peer.connect(CasterSignaling.camPeerIdForCode(currentCode), { reliable: true });
     try {
       await CasterSignaling.waitForConnection(camConn, 15000);
-      CasterSignaling.sendData(camConn, { type: 'start-stream', desktopPeerId });
+      CasterSignaling.sendData(camConn, { type: 'start-stream', desktopPeerId: targetId });
       streaming = true;
       CasterSignaling.sendData(glassesConn, { type: 'stream-started' });
       CasterSignaling.sendData(desktopConn, { type: 'stream-started' });

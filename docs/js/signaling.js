@@ -2,7 +2,7 @@
  * PeerJS pairing + WebRTC — runs entirely from GitHub Pages.
  */
 
-const APP_VERSION = '16';
+const APP_VERSION = '17';
 
 function generateCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -10,6 +10,10 @@ function generateCode() {
 
 function peerIdForCode(code) {
   return `${window.CASTER_CONFIG?.PEER_PREFIX || 'mdvc-'}${code}`;
+}
+
+function desktopPeerIdForCode(code) {
+  return `${window.CASTER_CONFIG?.PEER_PREFIX || 'mdvc-'}desktop-${code}`;
 }
 
 function camPeerIdForCode(code) {
@@ -60,7 +64,7 @@ function waitForConnection(conn, ms = 30000) {
     conn.once('open', () => res(conn));
     conn.once('error', rej);
     conn.once('close', () => rej(new Error('Connection closed.')));
-  }), ms, 'Could not find phone relay. On phone: open relay.html and wait for the green dot.');
+  }), ms, 'Could not reach phone relay. Keep relay.html open with a green dot.');
 }
 
 function waitForRelayAck(conn, ms = 25000) {
@@ -79,6 +83,28 @@ function waitForRelayAck(conn, ms = 25000) {
     conn.on('data', onData);
     conn.on('close', onClose);
   }), ms, 'Phone relay did not respond. Refresh relay.html on your phone.');
+}
+
+function waitForIncomingHello(peer, role, ms = 35000) {
+  return withTimeout(new Promise((resolve, reject) => {
+    function onConnection(conn) {
+      function onData(msg) {
+        if (msg?.type === 'hello' && msg.role === role) {
+          peer.off('connection', onConnection);
+          conn.off('data', onData);
+          conn.off('close', onClose);
+          sendData(conn, { type: 'relay-ack', role: 'desktop' });
+          resolve(conn);
+        }
+      }
+      function onClose() {
+        conn.off('data', onData);
+      }
+      conn.on('data', onData);
+      conn.on('close', onClose);
+    }
+    peer.on('connection', onConnection);
+  }), ms, 'Phone relay did not connect. Keep relay.html open with a green dot, then try again.');
 }
 
 function createPeer(id) {
@@ -132,7 +158,7 @@ async function connectToRelay(code, peer, role, onStatus) {
     }
   }
 
-  throw lastErr || new Error('Timed out. On phone: open relay.html, wait for the green dot, then try again.');
+  throw lastErr || new Error('Could not reach phone relay. Keep relay.html open with a green dot.');
 }
 
 function sendData(conn, data) {
@@ -143,11 +169,13 @@ window.CasterSignaling = {
   APP_VERSION,
   generateCode,
   peerIdForCode,
+  desktopPeerIdForCode,
   camPeerIdForCode,
   hasCameraSupport,
   createPeer,
   createPeerWithRetry,
   connectToRelay,
+  waitForIncomingHello,
   withTimeout,
   waitForPeerOpen,
   waitForConnection,
