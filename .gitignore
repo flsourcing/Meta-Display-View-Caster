@@ -1,7 +1,9 @@
 node_modules/
-server/
 .env
 .env.*
 *.log
 .DS_Store
 Thumbs.db
+ios/build/
+ios/*.xcodeproj/
+ios/*.xcworkspace/
