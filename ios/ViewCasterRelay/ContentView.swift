@@ -92,7 +92,8 @@ final class RelayViewModel: ObservableObject {
         metaHint = """
         \(SigningInfo.developerModeHint)
         In Meta AI you should see a prompt to connect View Caster Relay.
-        If Meta AI opens with no prompt, tap Reset Meta connection below and try again.
+        When Meta AI finishes, tap Open to return here — do not swipe back via the app switcher.
+        Meta state must show registered and at least 1 glasses detected before Live Stream works.
         """
         wearables.connectMetaAI()
     }
@@ -290,28 +291,41 @@ struct ContentView: View {
                             .font(.caption.monospaced())
                         Text("Meta state: \(model.wearables.registrationStateName)")
                             .font(.caption.monospaced())
+                        Text(model.wearables.glassesDevicesLabel)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(model.wearables.glassesDeviceCount > 0 ? Color.green : Color.orange)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
                     .background(Color(.secondarySystemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
+                    if model.wearables.isRegistered && !model.wearables.sdkRegistered {
+                        Text("Meta SDK not registered — confirm buttons are not enough. Tap Connect Meta AI again and tap Open when Meta AI finishes (do not use the app switcher).")
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                            .multilineTextAlignment(.center)
+                            .padding(10)
+                            .background(Color(.secondarySystemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+
                     Group {
-                        Label(model.wearables.isRegistered ? "1. Meta AI connected" : "1. Connect Meta AI",
-                              systemImage: model.wearables.isRegistered ? "checkmark.circle.fill" : "circle")
+                        Label(model.wearables.sdkRegistered ? "1. Meta AI connected" : "1. Connect Meta AI",
+                              systemImage: model.wearables.sdkRegistered ? "checkmark.circle.fill" : "circle")
 
                         Button("1. Connect Meta AI") {
                             model.connectMetaAI()
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(model.wearables.isRegistered || model.metaBlocked)
+                        .disabled(model.wearables.sdkRegistered || model.metaBlocked)
 
                         Text(model.wearables.registrationLabel)
                             .font(.footnote)
                             .foregroundStyle(model.wearables.isRegistered ? .green : .secondary)
                             .multilineTextAlignment(.center)
 
-                        if !model.wearables.isRegistered {
+                        if !model.wearables.sdkRegistered {
                             Button("Meta AI shows connected — tap here") {
                                 model.userConfirmMetaConnected()
                             }
@@ -350,6 +364,19 @@ struct ContentView: View {
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                         }
+
+                        if !model.wearables.lastMetaCallback.isEmpty {
+                            Text("Last callback: \(model.wearables.lastMetaCallback)")
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+
+                        Text(RelayViewModel.glassesURL)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .textSelection(.enabled)
 
                         Button("Add glasses web app (digit pad)") {
                             model.connectMetaAIWebApp()

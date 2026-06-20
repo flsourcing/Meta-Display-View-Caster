@@ -14,10 +14,15 @@ final class WearablesManager: ObservableObject {
     @Published private(set) var metaSetupStarted = false
     @Published private(set) var registrationStateName = "available"
     @Published private(set) var lastMetaSyncNote = ""
+    @Published private(set) var lastMetaCallback = ""
+    @Published private(set) var glassesDevicesLabel = "Glasses: scanning…"
+    @Published private(set) var glassesDeviceCount = 0
+    @Published private(set) var sdkRegistered = false
 
     var onVideoFrame: ((VideoFrame) -> Void)?
 
     private var sdk: any WearablesInterface { Wearables.shared }
+    private var deviceSelector: AutoDeviceSelector?
     private var deviceSession: DeviceSession?
     private var glassesStream: MWDATCamera.Stream?
     private var frameListener: Any?
@@ -25,6 +30,7 @@ final class WearablesManager: ObservableObject {
 
     private var registrationConfirmed = false
     private var cameraPermissionConfirmed = false
+    private var latestDeviceIDs: [DeviceIdentifier] = []
 
     private static let metaSetupKey = "metaSetupStarted"
     private static let registrationConfirmedKey = "metaRegistrationConfirmed"
@@ -52,13 +58,15 @@ final class WearablesManager: ObservableObject {
     }
 
     func configure() {
+        deviceSelector = AutoDeviceSelector(wearables: sdk)
+        applyRegistrationState(sdk.registrationState)
         startObservers()
         Task { await refreshAfterForeground() }
     }
 
     private func startObservers() {
         observeTasks.forEach { $0.cancel() }
-        observeTasks = [
+        var tasks: [Task<Void, Never>] = [
             Task { [weak self] in
                 guard let self else { return }
                 for await state in self.sdk.registrationStateStream() {
@@ -67,18 +75,59 @@ final class WearablesManager: ObservableObject {
                     }
                 }
             },
+            Task { [weak self] in
+                guard let self else { return }
+                for await devices in self.sdk.devicesStream() {
+                    await MainActor.run {
+                        self.updateDevices(devices)
+                    }
+                }
+            },
         ]
+        if let selector = deviceSelector {
+            tasks.append(Task { [weak self] in
+                for await device in selector.activeDeviceStream() {
+                    await MainActor.run { [weak self] in
+                        guard let self, let device else { return }
+                        let name = device.nameOrId()
+                        if self.glassesDeviceCount > 0 {
+                            self.glassesDevicesLabel = "Glasses: \(self.glassesDeviceCount) detected, active: \(name)"
+                        } else {
+                            self.glassesDevicesLabel = "Glasses: active \(name)"
+                        }
+                    }
+                }
+            })
+        }
+        observeTasks = tasks
+    }
+
+    private func updateDevices(_ devices: [DeviceIdentifier]) {
+        latestDeviceIDs = devices
+        glassesDeviceCount = devices.count
+        if devices.isEmpty {
+            glassesDevicesLabel = sdkRegistered
+                ? "Glasses: none detected — wear glasses, open Meta AI, Bluetooth on"
+                : "Glasses: none (Meta SDK not registered yet)"
+        } else {
+            let names = devices.prefix(2).map { id in
+                sdk.deviceForIdentifier(id)?.nameOrId() ?? "\(id)"
+            }
+            glassesDevicesLabel = "Glasses: \(devices.count) detected (\(names.joined(separator: ", ")))"
+        }
     }
 
     private func applyRegistrationState(_ state: RegistrationState) {
-        registrationStateName = String(describing: state)
+        registrationStateName = describeRegistrationState(state)
+        sdkRegistered = (state == .registered)
+
         switch state {
         case .registered:
             confirmRegistration()
         case .registering:
             if !registrationConfirmed {
                 isRegistered = false
-                registrationLabel = "Finish in Meta AI — tap Open, or confirm below when done"
+                registrationLabel = "Finish in Meta AI — tap Open to return"
             } else {
                 registrationLabel = "Meta AI connected"
             }
@@ -86,13 +135,15 @@ final class WearablesManager: ObservableObject {
                 unlockCameraStepIfNeeded()
             }
         case .available:
-            if registrationConfirmed {
+            if registrationConfirmed && sdkRegistered {
                 isRegistered = true
                 registrationLabel = "Meta AI connected"
                 enableCameraStep()
-            } else if metaSetupStarted {
+            } else if metaSetupStarted || registrationConfirmed {
+                isRegistered = false
                 unlockCameraStepIfNeeded()
-                registrationLabel = "If Meta AI shows connected, tap the button below"
+                registrationLabel = "SDK not registered — Connect Meta AI again, tap Open when done"
+                lastMetaSyncNote = "Confirm buttons alone cannot register — need Open callback from Meta AI"
             } else {
                 isRegistered = false
                 canRequestCamera = false
@@ -100,21 +151,31 @@ final class WearablesManager: ObservableObject {
                 cameraLabel = "Connect Meta AI first"
             }
         case .unavailable:
-            if registrationConfirmed {
+            if registrationConfirmed && sdkRegistered {
                 isRegistered = true
                 registrationLabel = "Meta AI connected"
                 enableCameraStep()
-            } else if metaSetupStarted {
+            } else if metaSetupStarted || registrationConfirmed {
                 unlockCameraStepIfNeeded()
-                registrationLabel = "If Meta AI shows connected, tap the button below"
+                registrationLabel = "Enable Developer Mode: Meta AI → Settings → your glasses"
             } else {
                 isRegistered = false
                 canRequestCamera = false
-                registrationLabel = "Enable Developer Mode in Meta AI (Settings → glasses)"
+                registrationLabel = "Registration unavailable — enable Developer Mode in Meta AI"
                 cameraLabel = "Connect Meta AI first"
             }
         @unknown default:
             if !registrationConfirmed { isRegistered = false }
+        }
+    }
+
+    private func describeRegistrationState(_ state: RegistrationState) -> String {
+        switch state {
+        case .registered: return "registered"
+        case .registering: return "registering"
+        case .available: return "available (SDK not linked — tap Open in Meta AI)"
+        case .unavailable: return "unavailable"
+        @unknown default: return "unknown"
         }
     }
 
@@ -134,18 +195,16 @@ final class WearablesManager: ObservableObject {
         canRequestCamera = true
     }
 
-    /// User confirms Meta AI shows the app as connected (SDK sync often misses app-switcher return).
     func userConfirmMetaConnected() {
         markMetaSetupStarted()
         confirmRegistration()
-        lastMetaSyncNote = "Meta connection saved"
+        lastMetaSyncNote = "Saved — still need SDK registered + glasses detected for Live Stream"
         Task { await syncMetaStatus() }
     }
 
-    /// User confirms camera is allowed in Meta AI settings.
     func userConfirmCameraAllowed() {
         confirmCameraPermission()
-        lastMetaSyncNote = "Camera permission saved"
+        lastMetaSyncNote = "Saved — wear glasses and ensure Meta AI sees them"
         Task { await syncMetaStatus() }
     }
 
@@ -163,7 +222,7 @@ final class WearablesManager: ObservableObject {
     }
 
     func connectMetaAI() {
-        guard !isRegistered else {
+        guard !sdkRegistered else {
             registrationLabel = "Already connected to Meta AI"
             enableCameraStep()
             return
@@ -173,7 +232,7 @@ final class WearablesManager: ObservableObject {
             do {
                 registrationLabel = "Opening Meta AI…"
                 try await sdk.startRegistration()
-                registrationLabel = "Approve in Meta AI → tap Open to return, then confirm below"
+                registrationLabel = "Approve in Meta AI → tap Open (required) to finish"
                 unlockCameraStepIfNeeded()
             } catch {
                 registrationLabel = "Registration failed: \(error.localizedDescription)"
@@ -200,6 +259,7 @@ final class WearablesManager: ObservableObject {
         isRegistered = false
         cameraGranted = false
         canRequestCamera = false
+        sdkRegistered = false
         lastMetaSyncNote = ""
         UserDefaults.standard.removeObject(forKey: Self.metaSetupKey)
         UserDefaults.standard.removeObject(forKey: Self.registrationConfirmedKey)
@@ -216,10 +276,16 @@ final class WearablesManager: ObservableObject {
 
     func handleCallback(_ url: URL) async {
         NSLog("ViewCaster: handleCallback \(url.absoluteString)")
+        lastMetaCallback = url.absoluteString
         do {
             _ = try await sdk.handleUrl(url)
+            applyRegistrationState(sdk.registrationState)
+            lastMetaSyncNote = sdkRegistered
+                ? "Meta callback OK — registered"
+                : "Meta callback received but state is still \(registrationStateName)"
         } catch {
             registrationLabel = "Meta callback error: \(error.localizedDescription)"
+            lastMetaSyncNote = "Callback error: \(error.localizedDescription)"
         }
         await refreshAfterForeground()
     }
@@ -230,21 +296,25 @@ final class WearablesManager: ObservableObject {
     }
 
     func syncMetaStatus() async {
-        if registrationStateName.contains("registered") {
-            confirmRegistration()
+        applyRegistrationState(sdk.registrationState)
+        guard sdkRegistered else {
+            lastMetaSyncNote = "SDK not registered — Connect Meta AI and tap Open when Meta AI finishes"
+            return
         }
+        confirmRegistration()
         do {
             let status = try await sdk.checkPermissionStatus(.camera)
-            confirmRegistration()
             enableCameraStep()
             if status == .granted {
                 confirmCameraPermission()
-                lastMetaSyncNote = "Synced — camera granted"
+                lastMetaSyncNote = "Synced — registered, camera granted, \(glassesDeviceCount) glasses"
             } else if !cameraGranted {
-                lastMetaSyncNote = "SDK: camera not granted yet — confirm below if Meta AI shows allowed"
+                lastMetaSyncNote = "Registered — allow camera in Meta AI (\(glassesDeviceCount) glasses detected)"
+            } else {
+                lastMetaSyncNote = "Synced — \(glassesDeviceCount) glasses detected"
             }
         } catch {
-            lastMetaSyncNote = "SDK sync failed — use confirm buttons if Meta AI looks correct"
+            lastMetaSyncNote = "Registered but sync failed: \(error.localizedDescription)"
             NSLog("ViewCaster: checkPermissionStatus: \(error.localizedDescription)")
         }
     }
@@ -275,9 +345,10 @@ final class WearablesManager: ObservableObject {
     }
 
     func startGlassesStream(status: @escaping (String) -> Void) async throws {
+        applyRegistrationState(sdk.registrationState)
         await syncMetaStatus()
 
-        guard registrationConfirmed || metaSetupStarted || isRegistered else {
+        guard sdkRegistered else {
             throw WearablesStreamError.notRegistered
         }
 
@@ -293,13 +364,29 @@ final class WearablesManager: ObservableObject {
 
         stopGlassesStream()
 
-        status("Connecting to glasses…")
-        let selector = AutoDeviceSelector(wearables: sdk)
-        let session = try sdk.createSession(deviceSelector: selector)
-        deviceSession = session
-        try session.start()
+        if deviceSelector == nil {
+            deviceSelector = AutoDeviceSelector(wearables: sdk)
+        }
 
-        status("Waiting for glasses (wear them, Bluetooth on)…")
+        status("Looking for Meta glasses…")
+        try await waitForGlassesDevice(status: status, timeoutSeconds: 60)
+
+        status("Connecting to glasses…")
+        let session: DeviceSession
+        do {
+            session = try createDeviceSession()
+        } catch {
+            throw mapSessionError(error)
+        }
+        deviceSession = session
+
+        do {
+            try session.start()
+        } catch {
+            throw mapSessionError(error)
+        }
+
+        status("Waiting for glasses session…")
         let deadline = Date().addingTimeInterval(45)
         var sessionReady = false
         for await state in session.stateStream() {
@@ -340,6 +427,43 @@ final class WearablesManager: ObservableObject {
         lastMetaSyncNote = "Glasses stream active"
     }
 
+    private func waitForGlassesDevice(
+        status: @escaping (String) -> Void,
+        timeoutSeconds: TimeInterval
+    ) async throws {
+        if !latestDeviceIDs.isEmpty { return }
+
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() <= deadline {
+            applyRegistrationState(sdk.registrationState)
+            if !latestDeviceIDs.isEmpty { return }
+            status("Waiting for glasses — wear them, Meta AI open on phone, Bluetooth on…")
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+        throw WearablesStreamError.noEligibleDevice
+    }
+
+    private func createDeviceSession() throws -> DeviceSession {
+        if let deviceId = latestDeviceIDs.first {
+            let specific = SpecificDeviceSelector(device: deviceId)
+            if let session = try? sdk.createSession(deviceSelector: specific) {
+                return session
+            }
+        }
+        guard let selector = deviceSelector else {
+            throw WearablesStreamError.noEligibleDevice
+        }
+        return try sdk.createSession(deviceSelector: selector)
+    }
+
+    private func mapSessionError(_ error: Error) -> WearablesStreamError {
+        let text = error.localizedDescription.lowercased()
+        if text.contains("eligible") || text.contains("no device") {
+            return .noEligibleDevice
+        }
+        return .sessionFailed(error.localizedDescription)
+    }
+
     func stopGlassesStream() {
         frameListener = nil
         Task { await glassesStream?.stop() }
@@ -354,18 +478,24 @@ final class WearablesManager: ObservableObject {
         case cameraDenied
         case streamFailed
         case deviceTimeout
+        case noEligibleDevice
         case sessionFailed(String)
 
         var errorDescription: String? {
             switch self {
             case .notRegistered:
-                return "Tap “Meta AI shows connected” below after connecting in Meta AI."
+                return "Meta SDK not registered. Connect Meta AI → approve → tap Open (not app switcher)."
             case .cameraDenied:
-                return "Tap “Camera allowed in Meta AI” below, then Live Stream again."
+                return "Allow glasses camera in Meta AI, then tap confirm below."
             case .streamFailed:
-                return "Could not start glasses stream — wear glasses, open Meta AI, Bluetooth on."
+                return "Could not start glasses stream — wear glasses, Meta AI open, Bluetooth on."
             case .deviceTimeout:
-                return "Glasses timed out — wear them, wait for Meta AI to show connected, retry Live Stream."
+                return "Glasses timed out — wear them, wait until Meta AI shows connected."
+            case .noEligibleDevice:
+                return """
+                No eligible glasses found. Wear glasses, open Meta AI on phone, Developer Mode on. \
+                Meta state must show registered (not available). Re-connect Meta AI and tap Open.
+                """
             case .sessionFailed(let detail):
                 return detail
             }
