@@ -293,6 +293,67 @@ body.glasses footer {
   padding: 0.75rem;
 }
 
+/* Meta Display — arrow key code picker (no touch grid) */
+body.glasses .code-picker {
+  outline: none;
+  margin: 1rem auto;
+  padding: 1rem;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  max-width: 520px;
+}
+
+body.glasses .code-picker:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 100, 224, 0.35);
+}
+
+body.glasses .code-slots {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+body.glasses .code-slot {
+  font-family: var(--mono);
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #fff;
+  width: 2.5rem;
+  text-align: center;
+  border-bottom: 3px solid transparent;
+  line-height: 1.2;
+}
+
+body.glasses .code-slot-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+body.glasses .glasses-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin: 1rem auto;
+  max-width: 520px;
+}
+
+body.glasses .glasses-action-btn {
+  flex: 1;
+  width: auto;
+  margin: 0;
+}
+
+body.glasses .glasses-action-btn:focus {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+body.glasses .glasses-stream-btn:focus {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
 @media (max-width: 480px) {
   input[type="text"] {
     font-size: 1.25rem;

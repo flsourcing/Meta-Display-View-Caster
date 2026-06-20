@@ -1,5 +1,5 @@
 /**
- * Glasses UI — digit pad + connect to phone relay
+ * Glasses UI — Meta Display input (↑↓←→ + Enter, no click grid)
  */
 (function () {
   const params = new URLSearchParams(location.search);
@@ -8,7 +8,6 @@
   const els = {
     pairingView: document.getElementById('pairing-view'),
     connectedView: document.getElementById('connected-view'),
-    pairCode: document.getElementById('pair-code'),
     codeTimer: document.getElementById('code-timer'),
     status: document.getElementById('status'),
     statusText: document.getElementById('status-text'),
@@ -16,66 +15,130 @@
     streamHint: document.getElementById('stream-hint'),
     streamBtn: document.getElementById('stream-btn'),
     sessionCode: document.getElementById('session-code'),
-    digitDisplay: document.getElementById('digit-display'),
-    codeInput: document.getElementById('code-input'),
+    codePicker: document.getElementById('code-picker'),
+    codeSlots: document.getElementById('code-slots'),
     joinBtn: document.getElementById('join-btn'),
+    clearBtn: document.getElementById('clear-btn'),
   };
 
+  const SLOT_COUNT = 6;
+  let slots = Array(SLOT_COUNT).fill(0);
+  let slotIndex = 0;
   let peer = null;
   let dataConn = null;
   let connected = false;
   let streaming = false;
-  let digits = presetCode || '';
-  let lastTapMs = 0;
+  let lastEnterMs = 0;
+
+  if (presetCode.length === SLOT_COUNT) {
+    slots = presetCode.split('').map((d) => parseInt(d, 10));
+  }
 
   function setStatus(kind, text) {
     els.status.className = `status ${kind}`;
     els.statusText.textContent = text;
   }
 
-  function renderDigits() {
-    const padded = (digits + '------').slice(0, 6);
-    if (els.digitDisplay) els.digitDisplay.textContent = padded;
-    if (els.pairCode) els.pairCode.textContent = padded;
-    if (els.codeInput) els.codeInput.value = digits;
+  function codeString() {
+    return slots.map(String).join('');
   }
 
-  function pressDigit(d) {
+  function renderSlots() {
+    els.codeSlots.innerHTML = slots.map((digit, i) => {
+      const active = i === slotIndex ? ' code-slot-active' : '';
+      return `<span class="code-slot${active}" data-index="${i}">${digit}</span>`;
+    }).join('');
+  }
+
+  function bumpDigit(delta) {
+    slots[slotIndex] = (slots[slotIndex] + delta + 10) % 10;
+    renderSlots();
+  }
+
+  function moveSlot(delta) {
+    slotIndex = Math.max(0, Math.min(SLOT_COUNT - 1, slotIndex + delta));
+    renderSlots();
+  }
+
+  function clearCode() {
+    slots = Array(SLOT_COUNT).fill(0);
+    slotIndex = 0;
+    renderSlots();
+    els.codePicker.focus();
+  }
+
+  function onEnterAction(fn) {
     const now = Date.now();
-    if (now - lastTapMs < 350) return;
-    lastTapMs = now;
-
-    if (d === 'clear') digits = '';
-    else if (digits.length < 6) digits += d;
-    renderDigits();
+    if (now - lastEnterMs < 400) return;
+    lastEnterMs = now;
+    fn();
   }
 
-  function bindButton(btn, action) {
-    btn.addEventListener('click', (e) => {
+  function bindEnterOnly(el, fn) {
+    if (!el) return;
+    el.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
       e.preventDefault();
-      action();
+      e.stopImmediatePropagation();
+      onEnterAction(fn);
+    });
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
     });
   }
 
-  document.querySelectorAll('.digit-btn[data-digit]').forEach((btn) => {
-    bindButton(btn, () => pressDigit(btn.dataset.digit));
-  });
+  function setupPickerKeys() {
+    els.codePicker.addEventListener('keydown', (e) => {
+      if (connected) return;
+
+      switch (e.key) {
+        case 'ArrowUp':
+          e.preventDefault();
+          bumpDigit(1);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          bumpDigit(-1);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          moveSlot(1);
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          moveSlot(-1);
+          break;
+        case 'Enter':
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          onEnterAction(() => {
+            if (slotIndex < SLOT_COUNT - 1) {
+              moveSlot(1);
+            } else {
+              els.joinBtn.focus();
+            }
+          });
+          break;
+        default:
+          break;
+      }
+    });
+  }
 
   function showConnected() {
     connected = true;
     els.pairingView.classList.add('hidden');
     els.connectedView.classList.remove('hidden');
     els.connectedLabel.textContent = 'Connected';
-    els.sessionCode.textContent = digits;
-    els.streamHint.textContent = 'Tap Live Stream to cast to desktop.';
+    els.sessionCode.textContent = codeString();
+    els.streamHint.textContent = 'Select Live Stream, press Enter';
     setStatus('connected', 'Linked to desktop');
     els.streamBtn.focus();
   }
 
   async function joinRelay() {
-    const code = digits.replace(/\D/g, '').slice(0, 6);
-    if (code.length !== 6) return;
-
+    const code = codeString();
     els.joinBtn.disabled = true;
     setStatus('waiting', 'Connecting…');
 
@@ -96,7 +159,7 @@
           streaming = false;
           els.streamBtn.textContent = 'Live Stream';
           els.streamBtn.classList.remove('active');
-          els.streamHint.textContent = 'Tap Live Stream to cast to desktop.';
+          els.streamHint.textContent = 'Select Live Stream, press Enter';
         }
       });
 
@@ -109,17 +172,14 @@
       showConnected();
     } catch (err) {
       console.error(err);
-      setStatus('error', 'Could not connect. Check code matches phone relay.');
+      setStatus('error', 'Could not connect. Check code on phone relay.');
       els.joinBtn.disabled = false;
+      els.codePicker.focus();
     }
   }
 
   function toggleStream() {
     if (!connected || !dataConn?.open) return;
-    const now = Date.now();
-    if (now - lastTapMs < 350) return;
-    lastTapMs = now;
-
     if (streaming) {
       CasterSignaling.sendData(dataConn, { type: 'stop-stream' });
       streaming = false;
@@ -130,15 +190,17 @@
     }
   }
 
-  bindButton(els.streamBtn, toggleStream);
-  bindButton(els.joinBtn, joinRelay);
+  bindEnterOnly(els.clearBtn, clearCode);
+  bindEnterOnly(els.joinBtn, joinRelay);
+  bindEnterOnly(els.streamBtn, toggleStream);
+  setupPickerKeys();
 
-  renderDigits();
+  renderSlots();
+  els.codePicker.focus();
 
-  if (presetCode.length === 6) {
+  if (presetCode.length === SLOT_COUNT) {
     joinRelay();
   } else {
     setStatus('waiting', 'Enter code from phone relay');
-    els.codeTimer.textContent = 'Open relay.html on your phone first';
   }
 })();
