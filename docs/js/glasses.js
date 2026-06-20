@@ -1,5 +1,5 @@
 /**
- * Glasses UI — Meta Display input (↑↓←→ + Enter, no click grid)
+ * Glasses UI — digit pad for Meta Display (Enter only, no click)
  */
 (function () {
   const params = new URLSearchParams(location.search);
@@ -8,52 +8,37 @@
   const els = {
     pairingView: document.getElementById('pairing-view'),
     connectedView: document.getElementById('connected-view'),
-    codeTimer: document.getElementById('code-timer'),
     status: document.getElementById('status'),
     statusText: document.getElementById('status-text'),
     connectedLabel: document.getElementById('connected-label'),
     streamHint: document.getElementById('stream-hint'),
     streamBtn: document.getElementById('stream-btn'),
     sessionCode: document.getElementById('session-code'),
-    codePicker: document.getElementById('code-picker'),
-    codeSlots: document.getElementById('code-slots'),
-    joinBtn: document.getElementById('join-btn'),
+    digitDisplay: document.getElementById('digit-display'),
     backspaceBtn: document.getElementById('backspace-btn'),
+    joinBtn: document.getElementById('join-btn'),
   };
 
-  const SLOT_COUNT = 6;
   const KEY_COOLDOWN_MS = 450;
 
-  let slots = Array(SLOT_COUNT).fill(0);
-  let slotIndex = 0;
   let peer = null;
   let dataConn = null;
   let connected = false;
   let streaming = false;
+  let digits = presetCode || '';
   let lastKeyAction = { key: '', at: 0 };
-
-  if (presetCode.length === SLOT_COUNT) {
-    slots = presetCode.split('').map((d) => parseInt(d, 10));
-  }
 
   function setStatus(kind, text) {
     els.status.className = `status ${kind}`;
     els.statusText.textContent = text;
   }
 
-  function codeString() {
-    return slots.map(String).join('');
-  }
-
-  function renderSlots() {
-    els.codeSlots.innerHTML = slots.map((digit, i) => {
-      const active = i === slotIndex ? ' code-slot-active' : '';
-      return `<span class="code-slot${active}" data-index="${i}">${digit}</span>`;
-    }).join('');
+  function renderDigits() {
+    const padded = (digits + '------').slice(0, 6);
+    if (els.digitDisplay) els.digitDisplay.textContent = padded;
   }
 
   function isDuplicateKey(key) {
-    if (key === 'Unidentified') return false;
     const now = Date.now();
     if (lastKeyAction.key === key && now - lastKeyAction.at < KEY_COOLDOWN_MS) {
       return true;
@@ -62,32 +47,26 @@
     return false;
   }
 
-  function bumpDigit(delta) {
-    slots[slotIndex] = (slots[slotIndex] + delta + 10) % 10;
-    renderSlots();
-  }
-
-  function moveSlot(delta) {
-    slotIndex = Math.max(0, Math.min(SLOT_COUNT - 1, slotIndex + delta));
-    renderSlots();
+  function pressDigit(d) {
+    if (isDuplicateKey(`digit-${d}`)) return;
+    if (digits.length < 6) digits += d;
+    renderDigits();
   }
 
   function backspace() {
-    if (slots[slotIndex] !== 0) {
-      slots[slotIndex] = 0;
-    } else if (slotIndex > 0) {
-      slotIndex -= 1;
-      slots[slotIndex] = 0;
-    }
-    renderSlots();
-    els.codePicker.focus();
+    if (isDuplicateKey('backspace')) return;
+    digits = digits.slice(0, -1);
+    renderDigits();
   }
 
   function bindEnterOnly(el, fn) {
     if (!el) return;
     el.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
-      if (e.repeat || isDuplicateKey('Enter-btn')) return;
+      if (e.repeat) {
+        e.preventDefault();
+        return;
+      }
       e.preventDefault();
       e.stopImmediatePropagation();
       fn();
@@ -98,71 +77,21 @@
     });
   }
 
-  function handlePickerKey(e) {
-    if (connected) return;
-
-    const key = e.key;
-    if (e.repeat) {
-      e.preventDefault();
-      return;
-    }
-    if (isDuplicateKey(`picker-${key}`)) {
-      e.preventDefault();
-      return;
-    }
-
-    switch (key) {
-      case 'ArrowUp':
-        e.preventDefault();
-        bumpDigit(1);
-        break;
-      case 'ArrowDown':
-        e.preventDefault();
-        bumpDigit(-1);
-        break;
-      case 'ArrowRight':
-        e.preventDefault();
-        moveSlot(1);
-        break;
-      case 'ArrowLeft':
-        e.preventDefault();
-        moveSlot(-1);
-        break;
-      case 'Backspace':
-        e.preventDefault();
-        backspace();
-        break;
-      case 'Enter':
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if (slotIndex < SLOT_COUNT - 1) {
-          moveSlot(1);
-        } else {
-          els.joinBtn.focus();
-        }
-        break;
-      default:
-        break;
-    }
-  }
-
-  function setupPickerKeys() {
-    els.codePicker.addEventListener('keydown', handlePickerKey);
-  }
-
   function showConnected() {
     connected = true;
     els.pairingView.classList.add('hidden');
     els.connectedView.classList.remove('hidden');
     els.connectedLabel.textContent = 'Connected';
-    els.sessionCode.textContent = codeString();
+    els.sessionCode.textContent = digits;
     els.streamHint.textContent = 'Select Live Stream, press Enter';
     setStatus('connected', 'Linked to desktop');
     els.streamBtn.focus();
   }
 
   async function joinRelay() {
-    const code = codeString();
+    const code = digits.replace(/\D/g, '').slice(0, 6);
+    if (code.length !== 6) return;
+
     els.joinBtn.disabled = true;
     setStatus('waiting', 'Connecting…');
 
@@ -198,12 +127,13 @@
       console.error(err);
       setStatus('error', 'Could not connect. Check code on phone relay.');
       els.joinBtn.disabled = false;
-      els.codePicker.focus();
     }
   }
 
   function toggleStream() {
     if (!connected || !dataConn?.open) return;
+    if (isDuplicateKey('stream')) return;
+
     if (streaming) {
       CasterSignaling.sendData(dataConn, { type: 'stop-stream' });
       streaming = false;
@@ -214,15 +144,17 @@
     }
   }
 
+  document.querySelectorAll('.digit-btn[data-digit]').forEach((btn) => {
+    bindEnterOnly(btn, () => pressDigit(btn.dataset.digit));
+  });
+
   bindEnterOnly(els.backspaceBtn, backspace);
   bindEnterOnly(els.joinBtn, joinRelay);
   bindEnterOnly(els.streamBtn, toggleStream);
-  setupPickerKeys();
 
-  renderSlots();
-  els.codePicker.focus();
+  renderDigits();
 
-  if (presetCode.length === SLOT_COUNT) {
+  if (presetCode.length === 6) {
     joinRelay();
   } else {
     setStatus('waiting', 'Enter code from phone relay');

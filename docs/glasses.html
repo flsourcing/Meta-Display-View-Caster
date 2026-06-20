@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=600, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>View Caster — Glasses</title>
-  <link rel="stylesheet" href="css/style.css?v=11">
+  <link rel="stylesheet" href="css/style.css?v=12">
 </head>
 <body class="glasses">
   <div class="container">
@@ -13,15 +13,21 @@
 
     <div id="pairing-view">
       <p class="code-timer">Enter code from phone relay</p>
-      <p id="code-timer" class="code-timer">↑↓ digit · ←→ move · Enter next · Backspace delete</p>
+      <div id="digit-display" class="digit-display" aria-live="polite">------</div>
 
-      <div id="code-picker" class="code-picker" tabindex="0" role="group" aria-label="Pairing code">
-        <div id="code-slots" class="code-slots" aria-live="polite"></div>
-      </div>
-
-      <div class="glasses-actions">
-        <button id="backspace-btn" type="button" class="btn btn-primary glasses-action-btn" tabindex="0">Backspace</button>
-        <button id="join-btn" type="button" class="btn btn-stream glasses-action-btn" tabindex="0">Connect</button>
+      <div id="digit-grid" class="digit-grid" role="group" aria-label="Pairing code keypad">
+        <button type="button" class="btn btn-primary digit-btn" data-digit="1" tabindex="0">1</button>
+        <button type="button" class="btn btn-primary digit-btn" data-digit="2" tabindex="0">2</button>
+        <button type="button" class="btn btn-primary digit-btn" data-digit="3" tabindex="0">3</button>
+        <button type="button" class="btn btn-primary digit-btn" data-digit="4" tabindex="0">4</button>
+        <button type="button" class="btn btn-primary digit-btn" data-digit="5" tabindex="0">5</button>
+        <button type="button" class="btn btn-primary digit-btn" data-digit="6" tabindex="0">6</button>
+        <button type="button" class="btn btn-primary digit-btn" data-digit="7" tabindex="0">7</button>
+        <button type="button" class="btn btn-primary digit-btn" data-digit="8" tabindex="0">8</button>
+        <button type="button" class="btn btn-primary digit-btn" data-digit="9" tabindex="0">9</button>
+        <button id="backspace-btn" type="button" class="btn btn-primary digit-btn" tabindex="0">Back</button>
+        <button type="button" class="btn btn-primary digit-btn" data-digit="0" tabindex="0">0</button>
+        <button id="join-btn" type="button" class="btn btn-stream digit-btn" tabindex="0">Go</button>
       </div>
 
       <div id="status" class="status waiting">
@@ -41,9 +47,9 @@
 
   <footer>Meta Display View Caster</footer>
 
-  <script src="js/peerjs.min.js?v=11"></script>
-  <script src="config.js?v=11"></script>
-  <script src="js/signaling.js?v=11"></script>
-  <script src="js/glasses.js?v=11"></script>
+  <script src="js/peerjs.min.js?v=12"></script>
+  <script src="config.js?v=12"></script>
+  <script src="js/signaling.js?v=12"></script>
+  <script src="js/glasses.js?v=12"></script>
 </body>
 </html>
