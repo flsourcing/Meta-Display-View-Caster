@@ -15,7 +15,7 @@ final class WearablesManager: ObservableObject {
 
     private let wearables = Wearables.shared
     private var deviceSession: DeviceSession?
-    private var stream: Stream?
+    private var glassesStream: MWDATCamera.Stream?
     private var frameListener: Any?
     private var observeTasks: [Task<Void, Never>] = []
 
@@ -52,11 +52,13 @@ final class WearablesManager: ObservableObject {
     }
 
     func connectMetaAI() {
-        do {
-            try wearables.startRegistration()
-            registrationLabel = "Opening Meta AI… approve connection"
-        } catch {
-            registrationLabel = "Registration failed: \(error.localizedDescription)"
+        Task { @MainActor in
+            do {
+                try await wearables.startRegistration()
+                registrationLabel = "Opening Meta AI… approve connection"
+            } catch {
+                registrationLabel = "Registration failed: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -107,10 +109,12 @@ final class WearablesManager: ObservableObject {
         guard let stream = try session.addStream(config: config) else {
             throw WearablesStreamError.streamFailed
         }
-        self.stream = stream
+        glassesStream = stream
 
         frameListener = stream.videoFramePublisher.listen { [weak self] frame in
-            self?.onVideoFrame?(frame)
+            Task { @MainActor [weak self] in
+                self?.onVideoFrame?(frame)
+            }
         }
 
         await stream.start()
@@ -119,8 +123,8 @@ final class WearablesManager: ObservableObject {
 
     func stopGlassesStream() {
         frameListener = nil
-        Task { await stream?.stop() }
-        stream = nil
+        Task { await glassesStream?.stop() }
+        glassesStream = nil
         try? deviceSession?.stop()
         deviceSession = nil
         isStreaming = false

@@ -6,7 +6,7 @@ import MWDATCamera
 final class FrameCapturer: RTCVideoCapturer {}
 
 final class WebRTCManager: NSObject {
-    private static let factory: RTCPeerConnectionFactory = {
+    nonisolated(unsafe) private static let factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
         return RTCPeerConnectionFactory()
     }()
