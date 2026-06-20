@@ -3,7 +3,7 @@ options:
   bundleIdPrefix: com.mdvc
   projectFormat: xcode16_0
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "17.0"
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -36,7 +36,10 @@ targets:
         PROVISIONING_PROFILE_SPECIFIER: ""
     dependencies:
       - package: WebRTC
+        embed: true
       - package: MWDAT
         product: MWDATCore
+        embed: true
       - package: MWDAT
         product: MWDATCamera
+        embed: true

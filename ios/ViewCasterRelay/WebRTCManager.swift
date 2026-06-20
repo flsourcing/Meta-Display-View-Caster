@@ -6,7 +6,7 @@ import MWDATCamera
 final class FrameCapturer: RTCVideoCapturer {}
 
 final class WebRTCManager: NSObject {
-    nonisolated(unsafe) private static let factory: RTCPeerConnectionFactory = {
+    private lazy var factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
         return RTCPeerConnectionFactory()
     }()
@@ -30,11 +30,11 @@ final class WebRTCManager: NSObject {
         ]
         config.sdpSemantics = .unifiedPlan
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
-        pc = Self.factory.peerConnection(with: config, constraints: constraints, delegate: self)
+        pc = factory.peerConnection(with: config, constraints: constraints, delegate: self)
 
-        videoSource = Self.factory.videoSource()
+        videoSource = factory.videoSource()
         frameCapturer = FrameCapturer()
-        localVideoTrack = Self.factory.videoTrack(with: videoSource!, trackId: "video0")
+        localVideoTrack = factory.videoTrack(with: videoSource!, trackId: "video0")
         pc?.add(localVideoTrack!, streamIds: ["stream0"])
 
         let offerConstraints = RTCMediaConstraints(

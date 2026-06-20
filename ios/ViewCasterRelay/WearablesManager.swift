@@ -13,19 +13,14 @@ final class WearablesManager: ObservableObject {
 
     var onVideoFrame: ((VideoFrame) -> Void)?
 
-    private let wearables = Wearables.shared
+    private var wearables: Wearables { Wearables.shared }
     private var deviceSession: DeviceSession?
     private var glassesStream: MWDATCamera.Stream?
     private var frameListener: Any?
     private var observeTasks: [Task<Void, Never>] = []
 
     func configure() {
-        do {
-            try Wearables.configure()
-            startObservers()
-        } catch {
-            registrationLabel = "DAT setup failed: \(error.localizedDescription)"
-        }
+        startObservers()
     }
 
     private func startObservers() {

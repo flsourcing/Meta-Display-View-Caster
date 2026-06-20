@@ -11,7 +11,7 @@ final class RelayViewModel: ObservableObject {
     @Published var metaHint = ""
     @Published private(set) var wearables = WearablesManager()
 
-    private let webrtc = WebRTCManager()
+    private lazy var webrtc = WebRTCManager()
 
     init() {
         let saved = UserDefaults.standard.string(forKey: "signalingServerURL") ?? Self.defaultServer

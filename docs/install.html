@@ -67,7 +67,14 @@
       <h2 style="font-size:1.1rem;margin-bottom:0.75rem;">Option B — Native app (glasses camera)</h2>
       <p class="message">Streams from <strong>Meta glasses camera</strong> (not iPhone). Opens Meta AI for app connection + camera permission. Requires sideloading.</p>
       <a class="install-btn secondary" href="https://github.com/flsourcing/Meta-Display-View-Caster/releases/latest">Download IPA (GitHub Releases)</a>
-      <p class="note">No release yet? The IPA is built automatically when iOS code changes — check <a href="https://github.com/flsourcing/Meta-Display-View-Caster/actions/workflows/build-ios-ipa.yml">Build iOS IPA</a> (green = download from Releases). After Sideloadly: tap <strong>Connect Meta AI</strong> → <strong>Allow glasses camera</strong> → Start relay. Enable Developer Mode in Meta AI (Settings → App Info → tap version 5×).</p>
+      <ol class="steps">
+        <li>Install with <strong>Sideloadly</strong> (same Apple ID as your iPhone)</li>
+        <li><strong>Trust the app:</strong> Settings → General → VPN &amp; Device Management → your Apple ID → Trust</li>
+        <li>If the icon does nothing when tapped, you likely skipped Trust — or re-download the latest release after updating</li>
+        <li>Open app → <strong>Connect Meta AI</strong> → <strong>Allow glasses camera</strong> → Start relay</li>
+        <li>Enable Developer Mode in Meta AI (Settings → App Info → tap version 5×)</li>
+      </ol>
+      <p class="note">Requires <strong>iOS 17+</strong>. The IPA is built automatically on each iOS update — get the latest from <a href="https://github.com/flsourcing/Meta-Display-View-Caster/releases/latest">Releases</a>.</p>
     </div>
 
     <div class="card" style="margin-top:1rem;">
