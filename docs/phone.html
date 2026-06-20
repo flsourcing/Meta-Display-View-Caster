@@ -10,13 +10,13 @@
   <meta name="mrbd-web-app-capable" content="yes">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>View Caster — Phone</title>
-  <link rel="stylesheet" href="css/style.css?v=22">
+  <link rel="stylesheet" href="css/style.css?v=23">
   <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230064e0' width='100' height='100' rx='20'/><text x='50' y='62' font-size='48' text-anchor='middle' fill='white' font-family='system-ui'>VC</text></svg>">
   <style>
     .setup-step { text-align: center; }
     .setup-step h2 { font-size: 1.15rem; margin-bottom: 0.5rem; }
     .setup-step p { color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem; }
-    .setup-step .btn { width: 100%; margin-bottom: 0.65rem; }
+    .setup-step .btn { width: 100%; margin-bottom: 0.65rem; display: block; text-align: center; text-decoration: none; box-sizing: border-box; }
     .setup-step .btn.secondary {
       background: var(--surface);
       color: var(--text);
@@ -70,26 +70,24 @@
     <div id="setup-view" class="card">
       <div id="step-meta" class="setup-step">
         <h2>Step 1 — Connect Meta AI</h2>
-        <p>Add View Caster to your glasses through the Meta AI app.</p>
-        <button id="meta-connect-btn" type="button" class="btn btn-primary">Open Meta AI</button>
+        <p>Opens the Meta AI app to add View Caster on your glasses.</p>
+        <a id="meta-connect-btn" class="btn btn-primary" href="#">Open Meta AI</a>
         <p class="setup-url" id="glasses-url"></p>
         <ol class="setup-steps">
-          <li>Meta AI opens on your phone</li>
-          <li>Go to <strong>Devices</strong> → your Display glasses</li>
-          <li><strong>App connections</strong> → <strong>Web apps</strong> → <strong>Add</strong></li>
-          <li>Name: <strong>View Caster</strong>, paste the URL above, tap <strong>Connect</strong></li>
-          <li>Open <strong>View Caster</strong> on your glasses (you’ll enter a code there later)</li>
+          <li>Meta AI opens with an <strong>Add web app</strong> prompt</li>
+          <li>Tap <strong>Connect</strong> to add View Caster to your glasses</li>
+          <li>Return here and tap <strong>Continue</strong></li>
         </ol>
-        <p id="meta-status" class="step-status">The glasses URL is copied when you tap Open Meta AI.</p>
-        <button id="meta-done-btn" type="button" class="btn btn-primary">I added View Caster on glasses</button>
+        <p id="meta-status" class="step-status">Tap Open Meta AI — Meta AI will prompt you to connect.</p>
+        <button id="meta-done-btn" type="button" class="btn btn-primary">Continue</button>
       </div>
 
       <div id="step-camera" class="setup-step hidden">
-        <h2>Step 2 — Camera for live view</h2>
-        <p>Live Stream uses your phone camera to cast to the desktop (glasses web apps can’t access the camera directly).</p>
-        <button id="camera-meta-btn" type="button" class="btn btn-primary secondary">Open Meta AI (glasses permissions)</button>
-        <button id="camera-connect-btn" type="button" class="btn btn-primary">Allow camera for live streaming</button>
-        <p id="camera-status" class="step-status">Allow camera so Live Stream can cast to your desktop.</p>
+        <h2>Step 2 — Camera permission</h2>
+        <p>iOS will ask to allow camera access so Live Stream can cast to your desktop.</p>
+        <button id="camera-connect-btn" type="button" class="btn btn-primary">Allow camera access</button>
+        <button id="camera-meta-btn" type="button" class="btn btn-primary secondary">Open Meta AI app</button>
+        <p id="camera-status" class="step-status">Tap Allow camera access when iOS prompts you.</p>
       </div>
     </div>
 
@@ -129,10 +127,11 @@
 
   <footer><a href="install.html">Install</a> · <a href="./">Desktop</a> · <a href="glasses.html">Glasses</a></footer>
 
-  <script src="js/peerjs.min.js?v=22"></script>
-  <script src="config.js?v=22"></script>
-  <script src="js/signaling.js?v=22"></script>
-  <script src="js/relay.js?v=22"></script>
-  <script src="js/phone-setup.js?v=22"></script>
+  <script src="js/peerjs.min.js?v=23"></script>
+  <script src="config.js?v=23"></script>
+  <script src="js/meta-ai-link.js?v=23"></script>
+  <script src="js/signaling.js?v=23"></script>
+  <script src="js/relay.js?v=23"></script>
+  <script src="js/phone-setup.js?v=23"></script>
 </body>
 </html>

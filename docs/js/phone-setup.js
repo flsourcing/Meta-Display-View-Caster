@@ -24,12 +24,10 @@
     networkLabel: document.getElementById('network-label'),
   };
 
-  function pageBase() {
-    return location.href.replace(/[^/?#]*([?#].*)?$/, '');
-  }
+  let metaOpenedAt = 0;
 
   function glassesUrl() {
-    return `${pageBase()}glasses.html`;
+    return window.CasterMetaAI?.glassesAppUrl?.() || `${location.href.replace(/[^/?#]*([?#].*)?$/, '')}glasses.html`;
   }
 
   function isMetaDone() {
@@ -48,27 +46,6 @@
     if (!el) return;
     el.textContent = text;
     el.style.color = ok === true ? 'var(--success)' : ok === false ? 'var(--error)' : 'var(--muted)';
-  }
-
-  async function copyText(text) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      try {
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        return true;
-      } catch {
-        return false;
-      }
-    }
   }
 
   function showStep(step) {
@@ -92,43 +69,12 @@
   function finishMeta() {
     localStorage.setItem(STORAGE.meta, '1');
     showStep('camera');
-    setStepStatus(els.cameraStatus, 'Allow camera so Live Stream can cast to your desktop.');
+    setStepStatus(els.cameraStatus, 'Tap the button below — iOS will ask to allow camera access.');
   }
 
   function finishCamera() {
     localStorage.setItem(STORAGE.camera, '1');
     showReady();
-  }
-
-  function openMetaAiApp() {
-    const url = glassesUrl();
-    copyText(url);
-
-    const schemes = [
-      'metaai://',
-      'meta-ai://',
-    ];
-
-    let opened = false;
-    for (const scheme of schemes) {
-      try {
-        window.location.href = scheme;
-        opened = true;
-        break;
-      } catch {
-        /* try next */
-      }
-    }
-
-    setStepStatus(
-      els.metaStatus,
-      opened
-        ? 'Opening Meta AI… Add the glasses web app (URL copied).'
-        : 'Copy the URL below and add it in Meta AI → Web apps.',
-      null
-    );
-
-    if (els.glassesUrl) els.glassesUrl.textContent = url;
   }
 
   async function allowCamera() {
@@ -138,7 +84,7 @@
     }
 
     els.cameraBtn.disabled = true;
-    setStepStatus(els.cameraStatus, 'Requesting camera access…');
+    setStepStatus(els.cameraStatus, 'Allow camera when iOS asks…');
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -146,12 +92,12 @@
         audio: false,
       });
       stream.getTracks().forEach((t) => t.stop());
-      setStepStatus(els.cameraStatus, 'Camera ready for live streaming.', true);
+      setStepStatus(els.cameraStatus, 'Camera allowed — ready for Live Stream.', true);
       finishCamera();
     } catch {
       setStepStatus(
         els.cameraStatus,
-        'Camera denied. iOS: Settings → View Caster → Camera → Allow, then tap again.',
+        'Camera denied. Settings → View Caster → Camera → Allow, then tap again.',
         false
       );
     } finally {
@@ -160,12 +106,13 @@
   }
 
   function openMetaForCamera() {
-    openMetaAiApp();
-    setStepStatus(
-      els.cameraStatus,
-      'In Meta AI: Devices → your glasses → ensure camera / live view permissions are on. Then tap Allow camera below.',
-      null
-    );
+    metaOpenedAt = Date.now();
+    setStepStatus(els.cameraStatus, 'Opening Meta AI… check glasses permissions if needed.', null);
+    try {
+      window.CasterMetaAI.openMetaAi();
+    } catch {
+      setStepStatus(els.cameraStatus, 'Install Meta AI from the App Store, then try again.', false);
+    }
   }
 
   function resetSetup() {
@@ -177,7 +124,25 @@
   function init() {
     if (els.glassesUrl) els.glassesUrl.textContent = glassesUrl();
 
-    els.metaBtn?.addEventListener('click', openMetaAiApp);
+    if (els.metaBtn && window.CasterMetaAI) {
+      els.metaBtn.href = window.CasterMetaAI.webAppDeepLink(
+        window.CasterMetaAI.glassesAppName(),
+        glassesUrl()
+      );
+      els.metaBtn.addEventListener('click', () => {
+        metaOpenedAt = Date.now();
+        setStepStatus(els.metaStatus, 'Opening Meta AI… approve Connect when prompted.', null);
+        window.setTimeout(() => {
+          if (document.visibilityState === 'visible' && Date.now() - metaOpenedAt < 3000) {
+            setStepStatus(
+              els.metaStatus,
+              'If Meta AI did not open: install Meta AI from the App Store, then tap again.',
+              false
+            );
+          }
+        }, 2500);
+      });
+    }
     els.metaDoneBtn?.addEventListener('click', finishMeta);
     els.cameraBtn?.addEventListener('click', allowCamera);
     els.cameraMetaBtn?.addEventListener('click', openMetaForCamera);
@@ -198,8 +163,14 @@
 
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'visible') return;
-      if (!isMetaDone() && els.stepMeta && !els.stepMeta.classList.contains('hidden')) {
-        setStepStatus(els.metaStatus, 'Welcome back — tap “I added View Caster on glasses” when done.');
+      if (metaOpenedAt && Date.now() - metaOpenedAt < 120000) {
+        if (!isMetaDone() && els.stepMeta && !els.stepMeta.classList.contains('hidden')) {
+          setStepStatus(
+            els.metaStatus,
+            'Back from Meta AI? If you tapped Connect, tap Continue below.',
+            true
+          );
+        }
       }
     });
 

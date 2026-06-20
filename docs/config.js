@@ -15,6 +15,9 @@ window.CASTER_CONFIG = {
   // SIGNALING_URL: 'wss://YOUR-SERVICE.onrender.com',
   SIGNALING_URL: '',
 
+  GLASSES_APP_URL: 'https://flsourcing.github.io/Meta-Display-View-Caster/glasses.html',
+  GLASSES_APP_NAME: 'ViewCaster',
+
   PEERJS: {
     host: '0.peerjs.com',
     port: 443,
