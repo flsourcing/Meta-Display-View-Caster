@@ -1,6 +1,10 @@
 import AVFoundation
 import CoreMedia
 
+private struct SendableSampleBuffer: @unchecked Sendable {
+    let value: CMSampleBuffer
+}
+
 /// Rear phone camera fallback when Meta SDK registration is unavailable.
 final class PhoneCameraManager: NSObject, @unchecked Sendable {
     var onSampleBuffer: ((CMSampleBuffer) -> Void)?
@@ -115,9 +119,10 @@ extension PhoneCameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
         let status = CMSampleBufferCreateCopy(allocator: kCFAllocatorDefault, sampleBuffer: sampleBuffer, sampleBufferOut: &copy)
         guard status == noErr, let copy else { return }
 
+        let boxed = SendableSampleBuffer(value: copy)
         let handler = onSampleBuffer
-        DispatchQueue.main.async {
-            handler?(copy)
+        Task { @MainActor in
+            handler?(boxed.value)
         }
     }
 }
