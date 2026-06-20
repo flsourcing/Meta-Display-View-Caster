@@ -37,6 +37,15 @@ final class SignalingClient: ObservableObject {
     func disconnect() {
         connectTask?.cancel()
         connectTask = nil
+        closeSocket()
+        connected = false
+        desktopLinked = false
+        glassesLinked = false
+        status = "Offline"
+    }
+
+    /// Tear down socket/tasks only — do not cancel the active connect task.
+    private func closeSocket() {
         registerTask?.cancel()
         registerTask = nil
         pingTask?.cancel()
@@ -45,10 +54,6 @@ final class SignalingClient: ObservableObject {
         ws = nil
         session?.invalidateAndCancel()
         session = nil
-        connected = false
-        desktopLinked = false
-        glassesLinked = false
-        status = "Offline"
     }
 
     func sendSignal(type: String, payload: [String: Any] = [:]) {
@@ -103,12 +108,15 @@ final class SignalingClient: ObservableObject {
     }
 
     private func connectAsync() async {
-        disconnect()
+        closeSocket()
         connected = false
         code = "------"
         status = "Connecting…"
 
-        _ = await wakeServer()
+        let woke = await wakeServer()
+        if !woke {
+            status = "Server waking up — retrying…"
+        }
 
         for attempt in 1...3 {
             if Task.isCancelled { return }
@@ -125,23 +133,22 @@ final class SignalingClient: ObservableObject {
             listen()
             startRegisterLoop()
 
-            for _ in 0..<80 {
+            for tick in 0..<100 {
                 if Task.isCancelled { return }
                 if connected { return }
+                if tick == 20 && !connected {
+                    status = "Still connecting… (Render free tier can take 60s)"
+                }
                 try? await Task.sleep(nanoseconds: 500_000_000)
             }
 
-            registerTask?.cancel()
-            registerTask = nil
-            ws?.cancel(with: .goingAway, reason: nil)
-            ws = nil
-            session.invalidateAndCancel()
-            self.session = nil
+            closeSocket()
             _ = await wakeServer(maxAttempts: 2)
         }
 
-        connected = false
-        status = "Could not reach signaling server — tap Start relay"
+        if !connected {
+            status = "Could not reach signaling server — tap Start relay"
+        }
     }
 
     private func startRegisterLoop() {

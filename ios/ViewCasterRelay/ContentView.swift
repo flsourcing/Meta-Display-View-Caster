@@ -63,6 +63,10 @@ final class RelayViewModel: ObservableObject {
         signaling.disconnect()
     }
 
+    func restartRelay() {
+        signaling.connect()
+    }
+
     func connectMetaAI() {
         metaHint = """
         In Meta AI: approve the connection prompt, or go to App connections → Developer mode apps → View Caster Relay.
@@ -196,8 +200,12 @@ struct ContentView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
 
                     Button(model.signaling.connected ? "Restart relay" : "Start relay") {
-                        model.stop()
-                        model.start()
+                        if model.signaling.connected {
+                            model.stop()
+                            model.start()
+                        } else {
+                            model.restartRelay()
+                        }
                     }
                     .buttonStyle(.borderedProminent)
 
