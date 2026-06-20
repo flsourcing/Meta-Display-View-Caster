@@ -44,15 +44,12 @@ final class WearablesManager: ObservableObject {
     }
 
     private func applyPersistedMetaState() {
-        if registrationConfirmed {
-            isRegistered = true
-            registrationLabel = "Meta AI connected"
-            enableCameraStep()
-        }
+        // Persisted flags only unlock UI steps; SDK registrationState is authoritative.
         if cameraPermissionConfirmed {
             cameraGranted = true
             cameraLabel = "Glasses camera allowed"
-        } else if metaSetupStarted || registrationConfirmed {
+        }
+        if metaSetupStarted || registrationConfirmed {
             unlockCameraStepIfNeeded()
         }
     }
@@ -120,61 +117,64 @@ final class WearablesManager: ObservableObject {
     private func applyRegistrationState(_ state: RegistrationState) {
         registrationStateName = describeRegistrationState(state)
         sdkRegistered = (state == .registered)
+        isRegistered = sdkRegistered
 
         switch state {
         case .registered:
             confirmRegistration()
         case .registering:
-            if !registrationConfirmed {
-                isRegistered = false
-                registrationLabel = "Finish in Meta AI — tap Open to return"
-            } else {
-                registrationLabel = "Meta AI connected"
-            }
+            isRegistered = false
+            registrationLabel = "Finish in Meta AI — tap Open to return (not app switcher)"
             if metaSetupStarted || registrationConfirmed {
                 unlockCameraStepIfNeeded()
             }
         case .available:
-            if registrationConfirmed && sdkRegistered {
-                isRegistered = true
-                registrationLabel = "Meta AI connected"
-                enableCameraStep()
-            } else if metaSetupStarted || registrationConfirmed {
-                isRegistered = false
+            isRegistered = false
+            if metaSetupStarted || registrationConfirmed {
                 unlockCameraStepIfNeeded()
-                registrationLabel = "SDK not registered — Connect Meta AI again, tap Open when done"
-                lastMetaSyncNote = "Confirm buttons alone cannot register — need Open callback from Meta AI"
+                registrationLabel = "Meta AI linked but SDK not registered — tap Open when Meta AI finishes"
+                lastMetaSyncNote = unavailableHelp(state: state)
             } else {
-                isRegistered = false
                 canRequestCamera = false
-                registrationLabel = "Tap Connect Meta AI"
+                registrationLabel = "Tap Connect Meta AI (native app — separate from glasses web app)"
                 cameraLabel = "Connect Meta AI first"
             }
         case .unavailable:
-            if registrationConfirmed && sdkRegistered {
-                isRegistered = true
-                registrationLabel = "Meta AI connected"
-                enableCameraStep()
-            } else if metaSetupStarted || registrationConfirmed {
+            isRegistered = false
+            if metaSetupStarted || registrationConfirmed {
                 unlockCameraStepIfNeeded()
-                registrationLabel = "Enable Developer Mode: Meta AI → Settings → your glasses"
+                registrationLabel = "Registration blocked — see checklist below"
+                lastMetaSyncNote = unavailableHelp(state: state)
             } else {
-                isRegistered = false
                 canRequestCamera = false
-                registrationLabel = "Registration unavailable — enable Developer Mode in Meta AI"
+                registrationLabel = "Registration unavailable — enable both developer mode steps"
                 cameraLabel = "Connect Meta AI first"
             }
         @unknown default:
-            if !registrationConfirmed { isRegistered = false }
+            isRegistered = false
         }
+    }
+
+    private func unavailableHelp(state: RegistrationState) -> String {
+        let stateLine = state == .unavailable
+            ? "SDK state: unavailable (often phone OR glasses dev mode, or Team ID mismatch)"
+            : "SDK state: available (Meta AI not finished — tap Open callback required)"
+        return """
+        \(stateLine)
+        1) Meta AI → Settings → App Info → tap version 5× → Developer Mode ON.
+        2) Meta AI → Settings → your glasses → Developer Mode ON.
+        3) After Connect Meta AI, tap Open in Meta AI (not app switcher).
+        4) Meta AI → App connections → Developer mode apps → View Caster Relay should appear.
+        Web Apps (Bypass-style URL) connected ≠ this native app registered.
+        """
     }
 
     private func describeRegistrationState(_ state: RegistrationState) -> String {
         switch state {
         case .registered: return "registered"
         case .registering: return "registering"
-        case .available: return "available (SDK not linked — tap Open in Meta AI)"
-        case .unavailable: return "unavailable"
+        case .available: return "available (finish in Meta AI → tap Open)"
+        case .unavailable: return "unavailable (dev mode / Team ID / not eligible)"
         @unknown default: return "unknown"
         }
     }
@@ -197,8 +197,7 @@ final class WearablesManager: ObservableObject {
 
     func userConfirmMetaConnected() {
         markMetaSetupStarted()
-        confirmRegistration()
-        lastMetaSyncNote = "Saved — still need SDK registered + glasses detected for Live Stream"
+        lastMetaSyncNote = "Saved UI step only — Live Stream still needs Meta state = registered"
         Task { await syncMetaStatus() }
     }
 
@@ -331,7 +330,7 @@ final class WearablesManager: ObservableObject {
         cameraLabel = "Opening Meta AI for camera permission…"
         do {
             let status = try await sdk.requestPermission(.camera)
-            confirmRegistration()
+            applyRegistrationState(sdk.registrationState)
             enableCameraStep()
             if status == .granted {
                 confirmCameraPermission()

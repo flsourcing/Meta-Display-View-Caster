@@ -147,7 +147,17 @@ final class RelayViewModel: ObservableObject {
 
     func connectMetaAIWebApp() {
         UIPasteboard.general.string = Self.glassesURL
-        metaHint = "Glasses web app URL copied. Meta AI → Web apps → add URL for the digit pad on glasses."
+        metaHint = "Glasses web app URL copied. Also try Open Meta AI → Web Apps, or use the button below."
+    }
+
+    func openMetaAIApp() {
+        MetaAIDeepLink.openMetaAI()
+        metaHint = "Opened Meta AI. Check App connections → Developer mode apps (native) vs Web Apps (digit pad)."
+    }
+
+    func openMetaAIAddWebApp() {
+        MetaAIDeepLink.openAddWebApp(name: "View Caster", url: Self.glassesURL)
+        metaHint = "Opening Meta AI to add the glasses web app (https URL)."
     }
 
     func handleMetaCallback(_ url: URL) async {
@@ -287,6 +297,8 @@ struct ContentView: View {
                             .font(.caption.monospaced())
                         Text("IPA Team: \(SigningInfo.configuredMWTeamID ?? "missing")")
                             .font(.caption.monospaced())
+                        Text("ClientToken: \(SigningInfo.configuredClientToken ?? "missing")")
+                            .font(.caption.monospaced())
                         Text("Sideload Team: \(SigningInfo.embeddedTeamIdentifier ?? "unknown")")
                             .font(.caption.monospaced())
                         Text("Meta state: \(model.wearables.registrationStateName)")
@@ -300,8 +312,9 @@ struct ContentView: View {
                     .background(Color(.secondarySystemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                    if model.wearables.isRegistered && !model.wearables.sdkRegistered {
-                        Text("Meta SDK not registered — confirm buttons are not enough. Tap Connect Meta AI again and tap Open when Meta AI finishes (do not use the app switcher).")
+
+                    if !model.wearables.sdkRegistered && model.wearables.metaSetupStarted {
+                        Text("Web app connected in Meta AI ≠ native relay registered. Enable phone dev mode (App Info → tap version 5×) AND glasses dev mode, then Connect Meta AI below.")
                             .font(.footnote)
                             .foregroundStyle(.orange)
                             .multilineTextAlignment(.center)
@@ -378,10 +391,20 @@ struct ContentView: View {
                             .multilineTextAlignment(.center)
                             .textSelection(.enabled)
 
-                        Button("Add glasses web app (digit pad)") {
-                            model.connectMetaAIWebApp()
+                        Button("Open Meta AI") {
+                            model.openMetaAIApp()
                         }
                         .buttonStyle(.bordered)
+
+                        Button("Add glasses web app (digit pad)") {
+                            model.openMetaAIAddWebApp()
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Copy glasses web URL") {
+                            model.connectMetaAIWebApp()
+                        }
+                        .font(.footnote)
 
                         Button("Sync Meta status") {
                             model.syncMetaStatus()

@@ -92,6 +92,16 @@ enum SigningInfo {
     }
 
     static var developerModeHint: String {
-        "Meta AI → Settings → your glasses → Developer Mode ON (per glasses pair; re-enable after firmware updates)."
+        """
+        Two separate connections: (A) Web app on glasses (https URL in Meta AI → Web Apps) \
+        does NOT register this native relay app. (B) Tap Connect Meta AI below for the native camera bridge.
+        Developer mode — both required:
+        1) Meta AI → Settings → App Info → tap App version 5 times → turn on Developer Mode.
+        2) Meta AI → Settings → your glasses → Developer Mode ON (re-enable after firmware updates).
+        """
+    }
+
+    static var configuredClientToken: String? {
+        mwDict?["ClientToken"] as? String
     }
 }

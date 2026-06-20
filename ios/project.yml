@@ -30,6 +30,7 @@ targets:
         MWDAT:
           AppLinkURLScheme: viewcaster://
           MetaAppID: "0"
+          ClientToken: "0"
           TeamID: JM52FT93Z2
     settings:
       base:
