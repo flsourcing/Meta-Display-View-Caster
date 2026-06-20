@@ -1,7 +1,9 @@
 /**
- * Desktop viewer — races phone→desktop and desktop→phone in parallel.
+ * Desktop viewer — WebSocket signaling (native phone app) or PeerJS fallback.
  */
 (function () {
+  const useWS = !!(window.CASTER_CONFIG?.SIGNALING_URL || window.CASTER_CONFIG?.SIGNALING_HOST);
+
   const els = {
     connectSection: document.getElementById('connect-section'),
     viewerSection: document.getElementById('viewer-section'),
@@ -16,6 +18,8 @@
     captureHint: document.getElementById('capture-hint'),
   };
 
+  let ws = null;
+  let pc = null;
   let peer = null;
   let dataConn = null;
   let activeCall = null;
@@ -47,18 +51,24 @@
   function showViewer(code) {
     els.connectSection.classList.add('hidden');
     els.viewerSection.classList.remove('hidden');
-    setViewerStatus('connected', 'Connected to phone relay — connect glasses');
-    els.captureHint.innerHTML = `When streaming: open <a href="capture.html?code=${code}" target="_blank" rel="noopener">capture.html?code=${code}</a> on your phone and allow camera.`;
+    setViewerStatus('connected', useWS ? 'Connected — connect glasses' : 'Connected to phone relay — connect glasses');
+    if (useWS) {
+      els.captureHint.textContent = 'Camera runs in the phone app. Tap Live Stream on glasses.';
+    } else {
+      els.captureHint.innerHTML = `When streaming: open <a href="capture.html?code=${code}" target="_blank" rel="noopener">capture.html?code=${code}</a> on your phone and allow camera.`;
+    }
   }
 
   function cleanupCall() {
     activeCall?.close();
     activeCall = null;
+    pc?.close();
+    pc = null;
     els.remoteVideo.srcObject = null;
     els.videoPlaceholder.classList.remove('hidden');
   }
 
-  function destroyConnectPeers() {
+  function destroyPeers() {
     hostPeer?.destroy();
     clientPeer?.destroy();
     hostPeer = null;
@@ -71,15 +81,49 @@
     connecting = false;
     connectAbort = true;
     cleanupCall();
+    ws?.close();
+    ws = null;
     dataConn?.close();
     dataConn = null;
-    destroyConnectPeers();
+    destroyPeers();
     els.viewerSection.classList.add('hidden');
     els.connectSection.classList.remove('hidden');
     els.connectBtn.disabled = false;
     els.connectBtn.textContent = 'Connect';
-    setStatus('waiting', 'Enter code from phone relay');
+    setStatus('waiting', useWS ? 'Enter code from phone app' : 'Enter code from phone relay');
     showError('');
+  }
+
+  function bindWsMessages() {
+    ws.addEventListener('message', async (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch { return; }
+      if (msg.type === 'offer' && !pc) {
+        pc = CasterWebRTCViewer.createPeerConnection((stream) => {
+          els.remoteVideo.srcObject = stream;
+          els.videoPlaceholder.classList.add('hidden');
+          setViewerStatus('connected', 'Live stream active');
+        });
+        CasterWebRTCViewer.bindIce(pc, ws);
+        await CasterWebRTCViewer.handleOffer(pc, ws, msg);
+      }
+      if (msg.type === 'ice-candidate' && pc) await CasterWebRTCViewer.handleRemoteIce(pc, msg);
+      if (msg.type === 'stream-started') setViewerStatus('connected', 'Stream starting…');
+      if (msg.type === 'stop-stream') {
+        cleanupCall();
+        setViewerStatus('connected', 'Connected — tap Live Stream on glasses');
+      }
+      if (msg.type === 'disconnected') resetToConnect();
+    });
+    ws.addEventListener('close', () => { if (connected) resetToConnect(); });
+  }
+
+  async function connectWS(code) {
+    setStatus('waiting', 'Connecting to server…');
+    ws = await CasterWS.pairDesktop(code);
+    bindWsMessages();
+    connected = true;
+    showViewer(code);
   }
 
   function setupPeer(p) {
@@ -95,11 +139,35 @@
     });
   }
 
-  function bindRelayMessages() {
+  async function raceConnectPeerJS(code) {
+    destroyPeers();
+    connectAbort = false;
+    hostPeer = CasterSignaling.createPeer(CasterSignaling.desktopPeerIdForCode(code));
+    clientPeer = await CasterSignaling.createPeerWithRetry();
+    setupPeer(hostPeer);
+    setupPeer(clientPeer);
+    const onStatus = (msg) => { if (!connectAbort) setStatus('waiting', msg); };
+    const inbound = (async () => {
+      await CasterSignaling.waitForPeerOpen(hostPeer, 12000);
+      onStatus('Waiting for phone…');
+      const conn = await CasterSignaling.waitForIncomingHello(hostPeer, 'phone-relay', 20000);
+      return { conn, keep: hostPeer, drop: clientPeer };
+    })();
+    const outbound = CasterSignaling.connectToRelay(code, clientPeer, 'desktop', onStatus)
+      .then((conn) => ({ conn, keep: clientPeer, drop: hostPeer }));
+    const result = await CasterSignaling.withTimeout(
+      Promise.race([inbound, outbound]),
+      25000,
+      'Timed out. Refresh relay on phone or use the native app.',
+    );
+    result.drop?.destroy();
+    peer = result.keep;
+    return result.conn;
+  }
+
+  function bindPeerRelayMessages() {
     dataConn.on('data', (msg) => {
-      if (msg?.type === 'stream-started') {
-        setViewerStatus('connected', 'Stream starting…');
-      }
+      if (msg?.type === 'stream-started') setViewerStatus('connected', 'Stream starting…');
       if (msg?.type === 'stop-stream') {
         cleanupCall();
         setViewerStatus('connected', 'Connected — tap Live Stream on glasses');
@@ -108,79 +176,37 @@
     dataConn.on('close', () => { if (connected) resetToConnect(); });
   }
 
-  function abortIfCancelled() {
-    if (connectAbort) throw new Error('Cancelled');
-  }
-
-  async function raceConnect(code) {
-    destroyConnectPeers();
-    connectAbort = false;
-
-    hostPeer = CasterSignaling.createPeer(CasterSignaling.desktopPeerIdForCode(code));
-    clientPeer = await CasterSignaling.createPeerWithRetry();
-    setupPeer(hostPeer);
-    setupPeer(clientPeer);
-
-    const onStatus = (msg) => {
-      if (!connectAbort) setStatus('waiting', msg);
-    };
-
-    const inbound = (async () => {
-      abortIfCancelled();
-      await CasterSignaling.waitForPeerOpen(hostPeer, 12000);
-      abortIfCancelled();
-      onStatus('Waiting for phone…');
-      const conn = await CasterSignaling.waitForIncomingHello(hostPeer, 'phone-relay', 20000);
-      return { conn, keep: hostPeer, drop: clientPeer };
-    })();
-
-    const outbound = (async () => {
-      abortIfCancelled();
-      onStatus('Finding phone relay…');
-      const conn = await CasterSignaling.connectToRelay(code, clientPeer, 'desktop', onStatus);
-      return { conn, keep: clientPeer, drop: hostPeer };
-    })();
-
-    const result = await CasterSignaling.withTimeout(
-      Promise.race([inbound, outbound]),
-      25000,
-      'Timed out. On phone: refresh relay.html, wait for green dot, enter the new code here.',
-    );
-
-    abortIfCancelled();
-    result.drop?.destroy();
-    peer = result.keep;
-    return result.conn;
-  }
-
   async function connect() {
     if (connecting) return;
     const code = els.codeInput.value.replace(/\D/g, '').slice(0, 6);
     if (code.length !== 6) {
-      showError('Enter the 6-digit code from relay.html on your phone.');
+      showError(useWS ? 'Enter the 6-digit code from the phone app.' : 'Enter the 6-digit code from relay.html on your phone.');
       return;
     }
 
     connecting = true;
-    els.connectBtn.disabled = false;
     els.connectBtn.textContent = 'Cancel';
     showError('');
     setStatus('waiting', 'Connecting…');
 
     try {
-      dataConn = await raceConnect(code);
-      bindRelayMessages();
-      connected = true;
-      els.connectBtn.textContent = 'Connect';
+      if (useWS) {
+        await connectWS(code);
+      } else {
+        dataConn = await raceConnectPeerJS(code);
+        bindPeerRelayMessages();
+        connected = true;
+        showViewer(code);
+      }
       els.connectBtn.disabled = true;
-      showViewer(code);
+      els.connectBtn.textContent = 'Connect';
     } catch (err) {
       console.error(err);
-      destroyConnectPeers();
-      if (err.message !== 'Cancelled') {
-        showError(err.message || 'Connection failed.');
-        setStatus('error', 'Could not connect');
-      }
+      destroyPeers();
+      ws?.close();
+      ws = null;
+      showError(err.message || 'Connection failed.');
+      setStatus('error', 'Could not connect');
       els.connectBtn.textContent = 'Connect';
       els.connectBtn.disabled = false;
     } finally {
@@ -192,10 +218,12 @@
     if (connecting) {
       connectAbort = true;
       connecting = false;
-      destroyConnectPeers();
+      destroyPeers();
+      ws?.close();
+      ws = null;
       els.connectBtn.textContent = 'Connect';
       els.connectBtn.disabled = false;
-      setStatus('waiting', 'Enter code from phone relay');
+      setStatus('waiting', useWS ? 'Enter code from phone app' : 'Enter code from phone relay');
       showError('Cancelled.');
       return;
     }
@@ -206,7 +234,8 @@
     els.codeInput.value = els.codeInput.value.replace(/\D/g, '').slice(0, 6);
   });
 
-  setStatus('waiting', 'Enter code from phone relay');
+  setStatus('waiting', useWS ? 'Enter code from phone app' : 'Enter code from phone relay');
+  if (!useWS) CasterSignaling.createPeerWithRetry().then((p) => { clientPeer = p; setupPeer(p); }).catch(() => {});
 
   if (urlCode?.length === 6) setTimeout(connect, 300);
 })();

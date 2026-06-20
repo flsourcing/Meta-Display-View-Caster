@@ -2,6 +2,7 @@
  * Glasses UI — digit pad for Meta Display (Enter only, no click)
  */
 (function () {
+  const useWS = !!(window.CASTER_CONFIG?.SIGNALING_URL || window.CASTER_CONFIG?.SIGNALING_HOST);
   const params = new URLSearchParams(location.search);
   const presetCode = params.get('code')?.replace(/\D/g, '').slice(0, 6);
 
@@ -22,15 +23,16 @@
 
   const KEY_COOLDOWN_MS = 450;
 
-  let peer = null;
+  let ws = null;
   let dataConn = null;
+  let peer = null;
   let connected = false;
   let streaming = false;
   let digits = presetCode || '';
   let lastKeyAction = { key: '', at: 0 };
 
   if (els.versionLabel) {
-    els.versionLabel.textContent = `v${CasterSignaling.APP_VERSION}`;
+    els.versionLabel.textContent = useWS ? 'ws' : `v${CasterSignaling.APP_VERSION}`;
   }
 
   function setStatus(kind, text) {
@@ -45,9 +47,7 @@
 
   function isDuplicateKey(key) {
     const now = Date.now();
-    if (lastKeyAction.key === key && now - lastKeyAction.at < KEY_COOLDOWN_MS) {
-      return true;
-    }
+    if (lastKeyAction.key === key && now - lastKeyAction.at < KEY_COOLDOWN_MS) return true;
     lastKeyAction = { key, at: now };
     return false;
   }
@@ -68,10 +68,7 @@
     if (!el) return;
     el.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
-      if (e.repeat) {
-        e.preventDefault();
-        return;
-      }
+      if (e.repeat) { e.preventDefault(); return; }
       e.preventDefault();
       e.stopImmediatePropagation();
       fn();
@@ -88,19 +85,51 @@
     els.connectedView.classList.remove('hidden');
     els.connectedLabel.textContent = 'Connected';
     els.sessionCode.textContent = digits;
-    els.streamHint.textContent = 'Select Live Stream, press Enter. Camera is on your phone (capture.html).';
-    setStatus('connected', 'Linked via phone relay');
+    els.streamHint.textContent = useWS
+      ? 'Select Live Stream, press Enter. Camera is on your phone app.'
+      : 'Select Live Stream, press Enter. Camera is on your phone (capture.html).';
+    setStatus('connected', 'Linked');
     els.streamBtn.focus();
   }
 
-  async function ensurePeer() {
-    if (peer?.open) return peer;
-    peer?.destroy();
-    peer = await CasterSignaling.createPeerWithRetry();
-    return peer;
+  function bindStreamMessages() {
+    const onMsg = (msg) => {
+      if (msg?.type === 'stream-started') {
+        streaming = true;
+        els.streamBtn.textContent = 'Stop Stream';
+        els.streamBtn.classList.add('active');
+        els.streamHint.textContent = 'Casting…';
+      }
+      if (msg?.type === 'stop-stream') {
+        streaming = false;
+        els.streamBtn.textContent = 'Live Stream';
+        els.streamBtn.classList.remove('active');
+        els.streamHint.textContent = useWS
+          ? 'Select Live Stream, press Enter. Camera is on your phone app.'
+          : 'Select Live Stream, press Enter. Camera is on your phone (capture.html).';
+      }
+    };
+
+    if (useWS && ws) {
+      ws.addEventListener('message', (ev) => {
+        try { onMsg(JSON.parse(ev.data)); } catch { /* ignore */ }
+      });
+      ws.addEventListener('close', () => {
+        connected = false;
+        setStatus('error', 'Disconnected');
+        els.joinBtn.disabled = false;
+      });
+    } else if (dataConn) {
+      dataConn.on('data', onMsg);
+      dataConn.on('close', () => {
+        connected = false;
+        setStatus('error', 'Disconnected');
+        els.joinBtn.disabled = false;
+      });
+    }
   }
 
-  async function joinRelay() {
+  async function joinSession() {
     const code = digits.replace(/\D/g, '').slice(0, 6);
     if (code.length !== 6) return;
 
@@ -108,54 +137,35 @@
     setStatus('waiting', 'Connecting…');
 
     try {
-      const p = await ensurePeer();
-      dataConn = await CasterSignaling.connectToRelay(
-        code,
-        p,
-        'glasses',
-        (msg) => setStatus('waiting', msg),
-      );
-
-      dataConn.on('data', (msg) => {
-        if (msg?.type === 'stream-started') {
-          streaming = true;
-          els.streamBtn.textContent = 'Stop Stream';
-          els.streamBtn.classList.add('active');
-          els.streamHint.textContent = 'Casting…';
-        }
-        if (msg?.type === 'stop-stream') {
-          streaming = false;
-          els.streamBtn.textContent = 'Live Stream';
-          els.streamBtn.classList.remove('active');
-          els.streamHint.textContent = 'Select Live Stream, press Enter. Camera is on your phone (capture.html).';
-        }
-      });
-
-      dataConn.on('close', () => {
-        connected = false;
-        setStatus('error', 'Disconnected');
-        els.joinBtn.disabled = false;
-      });
-
+      if (useWS) {
+        ws = await CasterWS.joinGlasses(code);
+      } else {
+        peer?.destroy();
+        peer = await CasterSignaling.createPeerWithRetry();
+        dataConn = await CasterSignaling.connectToRelay(code, peer, 'glasses', (msg) => setStatus('waiting', msg));
+      }
+      bindStreamMessages();
       showConnected();
     } catch (err) {
       console.error(err);
-      setStatus('error', err.message || 'Could not connect. Keep relay.html open on phone.');
+      setStatus('error', err.message || 'Could not connect.');
       els.joinBtn.disabled = false;
     }
   }
 
   function toggleStream() {
-    if (!connected || !dataConn?.open) return;
+    if (!connected) return;
     if (isDuplicateKey('stream')) return;
 
     if (streaming) {
-      CasterSignaling.sendData(dataConn, { type: 'stop-stream' });
+      if (useWS) CasterWS.send(ws, { type: 'stop-stream' });
+      else CasterSignaling.sendData(dataConn, { type: 'stop-stream' });
       streaming = false;
       els.streamBtn.textContent = 'Live Stream';
       els.streamBtn.classList.remove('active');
     } else {
-      CasterSignaling.sendData(dataConn, { type: 'start-stream' });
+      if (useWS) CasterWS.send(ws, { type: 'start-stream' });
+      else CasterSignaling.sendData(dataConn, { type: 'start-stream' });
     }
   }
 
@@ -164,15 +174,11 @@
   });
 
   bindEnterOnly(els.backspaceBtn, backspace);
-  bindEnterOnly(els.joinBtn, joinRelay);
+  bindEnterOnly(els.joinBtn, joinSession);
   bindEnterOnly(els.streamBtn, toggleStream);
 
   renderDigits();
-  ensurePeer().catch(() => {});
 
-  if (presetCode.length === 6) {
-    joinRelay();
-  } else {
-    setStatus('waiting', 'Enter code from phone relay');
-  }
+  if (presetCode.length === 6) joinSession();
+  else setStatus('waiting', useWS ? 'Enter code from phone app' : 'Enter code from phone relay');
 })();

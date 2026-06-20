@@ -1,0 +1,50 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/build-ios-ipa.yml'
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: cd ios && xcodegen generate
+
+      - name: Build unsigned app
+        run: |
+          cd ios
+          xcodebuild \
+            -project ViewCasterRelay.xcodeproj \
+            -scheme ViewCasterRelay \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$PWD/build/ViewCasterRelay.xcarchive" \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Package IPA for Sideloadly
+        run: |
+          cd ios/build
+          APP="ViewCasterRelay.xcarchive/Products/Applications/ViewCasterRelay.app"
+          mkdir -p Payload
+          cp -r "$APP" Payload/
+          zip -r ViewCasterRelay-unsigned.ipa Payload
+          rm -rf Payload
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ViewCasterRelay-ipa
+          path: ios/build/ViewCasterRelay-unsigned.ipa
+          retention-days: 30

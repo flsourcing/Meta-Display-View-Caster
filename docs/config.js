@@ -1,5 +1,5 @@
 /**
- * GitHub Pages only — no external server. PeerJS public cloud handles pairing.
+ * GitHub Pages UI + optional WebSocket signaling for native phone app.
  */
 window.CASTER_CONFIG = {
   PEER_PREFIX: 'mdvc-',
@@ -9,6 +9,10 @@ window.CASTER_CONFIG = {
   CONNECT_RETRY_MS: 400,
   CONNECT_ATTEMPTS: 6,
   CONNECT_TOTAL_MS: 22000,
+
+  // Set after deploying server/ to Render (or your host). Example:
+  // SIGNALING_URL: 'wss://meta-display-view-caster.onrender.com',
+  SIGNALING_URL: 'wss://meta-display-view-caster.onrender.com',
 
   PEERJS: {
     host: '0.peerjs.com',
