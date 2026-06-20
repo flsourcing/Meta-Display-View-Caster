@@ -10,6 +10,7 @@ final class RelayViewModel: ObservableObject {
     @Published private(set) var signaling: SignalingClient
     @Published var metaHint = ""
     @Published private(set) var wearables = WearablesManager()
+    @Published var sideloadTeamId = SigningInfo.teamIdentifier ?? ""
 
     private lazy var webrtc = WebRTCManager()
 
@@ -63,6 +64,10 @@ final class RelayViewModel: ObservableObject {
     }
 
     func connectMetaAI() {
+        metaHint = """
+        In Meta AI: approve the connection prompt, or go to App connections → Developer mode apps → View Caster Relay.
+        Enable Developer Mode first: Meta AI → Settings → App Info → tap version 5×.
+        """
         wearables.connectMetaAI()
     }
 
@@ -77,6 +82,13 @@ final class RelayViewModel: ObservableObject {
 
     func handleMetaCallback(_ url: URL) async {
         await wearables.handleCallback(url)
+    }
+
+    func onReturnFromBackground() {
+        sideloadTeamId = SigningInfo.teamIdentifier ?? sideloadTeamId
+        if !signaling.connected {
+            start()
+        }
     }
 
     private func beginGlassesCast() async {
@@ -95,6 +107,7 @@ final class RelayViewModel: ObservableObject {
 
 struct ContentView: View {
     @EnvironmentObject private var model: RelayViewModel
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -118,6 +131,7 @@ struct ContentView: View {
                         Text(model.signaling.status)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -136,6 +150,7 @@ struct ContentView: View {
                             model.connectMetaAI()
                         }
                         .buttonStyle(.borderedProminent)
+                        .disabled(model.wearables.isRegistered)
 
                         Text(model.wearables.registrationLabel)
                             .font(.footnote)
@@ -146,6 +161,7 @@ struct ContentView: View {
                             model.allowGlassesCamera()
                         }
                         .buttonStyle(.bordered)
+                        .disabled(!model.wearables.canRequestCamera)
 
                         Text(model.wearables.cameraLabel)
                             .font(.footnote)
@@ -161,6 +177,13 @@ struct ContentView: View {
                     if !model.metaHint.isEmpty {
                         Text(model.metaHint)
                             .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    if !model.sideloadTeamId.isEmpty {
+                        Text("Sideload Team ID: \(model.sideloadTeamId)\nIf Meta AI never prompts, patch the IPA with this Team ID before installing (see install page).")
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                     }
@@ -193,6 +216,11 @@ struct ContentView: View {
             .onAppear {
                 model.configureWearables()
                 model.start()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    model.onReturnFromBackground()
+                }
             }
         }
     }

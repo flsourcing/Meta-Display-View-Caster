@@ -12,6 +12,8 @@ final class SignalingClient: ObservableObject {
     private var session: URLSession?
     private var serverURL: URL
     private var pingTask: Task<Void, Never>?
+    private var connectTask: Task<Void, Never>?
+    private var registerTask: Task<Void, Never>?
 
     var onStartStream: (() -> Void)?
     var onStopStream: (() -> Void)?
@@ -28,22 +30,21 @@ final class SignalingClient: ObservableObject {
     }
 
     func connect() {
-        disconnect()
-        status = "Connecting…"
-        let session = URLSession(configuration: .default)
-        self.session = session
-        let task = session.webSocketTask(with: serverURL)
-        ws = task
-        task.resume()
-        listen()
-        send(["type": "register-relay"])
+        connectTask?.cancel()
+        connectTask = Task { await connectAsync() }
     }
 
     func disconnect() {
+        connectTask?.cancel()
+        connectTask = nil
+        registerTask?.cancel()
+        registerTask = nil
         pingTask?.cancel()
         pingTask = nil
         ws?.cancel(with: .goingAway, reason: nil)
         ws = nil
+        session?.invalidateAndCancel()
+        session = nil
         connected = false
         desktopLinked = false
         glassesLinked = false
@@ -72,13 +73,98 @@ final class SignalingClient: ObservableObject {
         ])
     }
 
+    private func httpBase() -> URL? {
+        var components = URLComponents(url: serverURL, resolvingAgainstBaseURL: false)
+        guard let scheme = serverURL.scheme?.lowercased() else { return nil }
+        components?.scheme = scheme == "wss" ? "https" : "http"
+        return components?.url
+    }
+
+    private func wakeServer(maxAttempts: Int = 4) async -> Bool {
+        guard let base = httpBase() else { return false }
+        let health = base.appendingPathComponent("health")
+        for attempt in 1...maxAttempts {
+            if Task.isCancelled { return false }
+            status = attempt == 1
+                ? "Waking signaling server…"
+                : "Waking server (attempt \(attempt)/\(maxAttempts))…"
+            do {
+                var request = URLRequest(url: health)
+                request.cachePolicy = .reloadIgnoringLocalCacheData
+                request.timeoutInterval = 25
+                let (_, response) = try await URLSession.shared.data(for: request)
+                if (response as? HTTPURLResponse)?.statusCode == 200 { return true }
+            } catch {
+                NSLog("ViewCaster: health check failed: \(error.localizedDescription)")
+            }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+        }
+        return false
+    }
+
+    private func connectAsync() async {
+        disconnect()
+        connected = false
+        code = "------"
+        status = "Connecting…"
+
+        _ = await wakeServer()
+
+        for attempt in 1...3 {
+            if Task.isCancelled { return }
+
+            status = attempt == 1
+                ? "Connecting to relay…"
+                : "Retrying relay (\(attempt)/3)…"
+
+            let session = URLSession(configuration: .default)
+            self.session = session
+            let task = session.webSocketTask(with: serverURL)
+            ws = task
+            task.resume()
+            listen()
+            startRegisterLoop()
+
+            for _ in 0..<80 {
+                if Task.isCancelled { return }
+                if connected { return }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+
+            registerTask?.cancel()
+            registerTask = nil
+            ws?.cancel(with: .goingAway, reason: nil)
+            ws = nil
+            session.invalidateAndCancel()
+            self.session = nil
+            _ = await wakeServer(maxAttempts: 2)
+        }
+
+        connected = false
+        status = "Could not reach signaling server — tap Start relay"
+    }
+
+    private func startRegisterLoop() {
+        registerTask?.cancel()
+        registerTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            while !Task.isCancelled && !connected {
+                send(["type": "register-relay"])
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
+    }
+
     private func send(_ body: [String: Any]) {
         guard let ws else { return }
         guard let data = try? JSONSerialization.data(withJSONObject: body),
               let text = String(data: data, encoding: .utf8) else { return }
         ws.send(.string(text)) { [weak self] error in
             if error != nil {
-                Task { @MainActor in self?.status = "Send failed" }
+                Task { @MainActor in
+                    guard let self, !self.connected else { return }
+                    self.status = "Send failed — retrying…"
+                }
             }
         }
     }
@@ -89,8 +175,9 @@ final class SignalingClient: ObservableObject {
             switch result {
             case .failure:
                 Task { @MainActor in
+                    guard !self.connected else { return }
+                    self.status = "Connection lost — tap Start relay"
                     self.connected = false
-                    self.status = "Could not reach signaling server"
                 }
             case .success(let message):
                 Task { @MainActor in
@@ -113,6 +200,8 @@ final class SignalingClient: ObservableObject {
             if let c = json["code"] as? String { code = c }
             connected = true
             status = "Ready — connect desktop & glasses"
+            registerTask?.cancel()
+            registerTask = nil
             startPing()
         case "desktop-joined":
             desktopLinked = true

@@ -6,10 +6,11 @@ import MWDATCore
 @MainActor
 final class WearablesManager: ObservableObject {
     @Published private(set) var registrationLabel = "Tap Connect Meta AI"
-    @Published private(set) var cameraLabel = "Tap Allow glasses camera"
+    @Published private(set) var cameraLabel = "Connect Meta AI first"
     @Published private(set) var isRegistered = false
     @Published private(set) var cameraGranted = false
     @Published private(set) var isStreaming = false
+    @Published private(set) var canRequestCamera = false
 
     var onVideoFrame: ((VideoFrame) -> Void)?
 
@@ -30,27 +31,55 @@ final class WearablesManager: ObservableObject {
                 guard let self else { return }
                 for await state in self.sdk.registrationStateStream() {
                     await MainActor.run {
-                        switch state {
-                        case .registered:
-                            self.isRegistered = true
-                            self.registrationLabel = "Meta AI connected"
-                        default:
-                            self.isRegistered = false
-                            if self.registrationLabel == "Meta AI connected" {
-                                self.registrationLabel = "Tap Connect Meta AI"
-                            }
-                        }
+                        self.applyRegistrationState(state)
                     }
                 }
             },
         ]
     }
 
+    private func applyRegistrationState(_ state: RegistrationState) {
+        switch state {
+        case .registered:
+            isRegistered = true
+            canRequestCamera = true
+            registrationLabel = "Meta AI connected"
+            if cameraLabel == "Connect Meta AI first" {
+                cameraLabel = "Tap Allow glasses camera"
+            }
+        case .registering:
+            isRegistered = false
+            canRequestCamera = false
+            registrationLabel = "Waiting for approval in Meta AI…"
+            cameraLabel = "Connect Meta AI first"
+        case .available:
+            isRegistered = false
+            canRequestCamera = false
+            registrationLabel = "Tap Connect Meta AI"
+            cameraLabel = "Connect Meta AI first"
+        case .unavailable:
+            isRegistered = false
+            canRequestCamera = false
+            registrationLabel = "Registration unavailable — enable Developer Mode in Meta AI"
+            cameraLabel = "Connect Meta AI first"
+        @unknown default:
+            isRegistered = false
+            canRequestCamera = false
+            registrationLabel = "Unknown registration state"
+            cameraLabel = "Connect Meta AI first"
+        }
+    }
+
     func connectMetaAI() {
+        guard !isRegistered else {
+            registrationLabel = "Already connected to Meta AI"
+            return
+        }
         Task { @MainActor in
             do {
+                registrationLabel = "Opening Meta AI…"
                 try await sdk.startRegistration()
-                registrationLabel = "Opening Meta AI… approve connection"
+                registrationLabel = "Approve View Caster in Meta AI, then return here"
             } catch {
                 registrationLabel = "Registration failed: \(error.localizedDescription)"
             }
@@ -58,6 +87,10 @@ final class WearablesManager: ObservableObject {
     }
 
     func requestGlassesCamera() async {
+        guard isRegistered else {
+            cameraLabel = "Connect Meta AI first (step 1)"
+            return
+        }
         cameraLabel = "Opening Meta AI for camera permission…"
         do {
             let status = try await sdk.requestPermission(.camera)
@@ -74,7 +107,7 @@ final class WearablesManager: ObservableObject {
         do {
             _ = try await sdk.handleUrl(url)
         } catch {
-            registrationLabel = "Meta AI callback failed"
+            registrationLabel = "Meta AI callback failed: \(error.localizedDescription)"
         }
     }
 

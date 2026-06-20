@@ -68,13 +68,17 @@
       <p class="message">Streams from <strong>Meta glasses camera</strong> (not iPhone). Opens Meta AI for app connection + camera permission. Requires sideloading.</p>
       <a class="install-btn secondary" href="https://github.com/flsourcing/Meta-Display-View-Caster/releases/latest">Download IPA (GitHub Releases)</a>
       <ol class="steps">
-        <li>Install with <strong>Sideloadly</strong> (same Apple ID as your iPhone)</li>
-        <li><strong>Trust the app:</strong> Settings → General → VPN &amp; Device Management → your Apple ID → Trust</li>
-        <li>If the icon does nothing when tapped, you likely skipped Trust — or re-download the latest release after updating</li>
-        <li>Open app → <strong>Connect Meta AI</strong> → <strong>Allow glasses camera</strong> → Start relay</li>
-        <li>Enable Developer Mode in Meta AI (Settings → App Info → tap version 5×)</li>
+        <li>Download <code>ViewCasterRelay-unsigned.ipa</code></li>
+        <li><strong>Patch Team ID</strong> (required for Meta AI connection):<br>
+          <code>cd ios</code><br>
+          <code>.\patch-ipa-teamid.ps1 -TeamId YOUR10CHARID -Ipa path\to\ViewCasterRelay-unsigned.ipa</code><br>
+          Use the Team ID Sideloadly shows when installing, or the value shown in the app after first open.</li>
+        <li>Install the <strong>-patched.ipa</strong> with Sideloadly (same Apple ID as iPhone)</li>
+        <li><strong>Trust:</strong> Settings → General → VPN &amp; Device Management → Trust</li>
+        <li>Meta AI → Settings → <strong>App Info</strong> → tap version <strong>5×</strong> → enable Developer Mode</li>
+        <li>Open relay app → <strong>Start relay</strong> (wait up to 60s for code) → <strong>Connect Meta AI</strong> → approve → <strong>Allow glasses camera</strong></li>
       </ol>
-      <p class="note">Requires <strong>iOS 17+</strong>. The IPA is built automatically on each iOS update — get the latest from <a href="https://github.com/flsourcing/Meta-Display-View-Caster/releases/latest">Releases</a>.</p>
+      <p class="note">Requires <strong>iOS 17+</strong>. Step 2 is required — without Team ID in the IPA, Meta AI opens but won’t show the app connection prompt.</p>
     </div>
 
     <div class="card" style="margin-top:1rem;">
