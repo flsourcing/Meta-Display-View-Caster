@@ -109,7 +109,12 @@
 
     try {
       const p = await ensurePeer();
-      dataConn = await CasterSignaling.connectToRelay(code, p, 'glasses');
+      dataConn = await CasterSignaling.connectToRelay(
+        code,
+        p,
+        'glasses',
+        (msg) => setStatus('waiting', msg),
+      );
 
       dataConn.on('data', (msg) => {
         if (msg?.type === 'stream-started') {

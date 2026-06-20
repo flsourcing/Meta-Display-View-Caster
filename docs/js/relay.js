@@ -183,8 +183,12 @@
       setNetworkOnline(false);
       if (err.type === 'unavailable-id' && !desktopConn?.open && !glassesConn?.open) {
         register(CasterSignaling.generateCode());
-      } else if (currentCode) {
-        scheduleRegister(currentCode, true);
+      } else if (currentCode && peer && !peer.destroyed) {
+        try {
+          peer.reconnect();
+        } catch {
+          scheduleRegister(currentCode, true);
+        }
       }
     });
   }
@@ -197,6 +201,12 @@
 
   async function register(code, keepVisible = false) {
     if (registering) return;
+    if (peer?.open && currentCode === code) {
+      setNetworkOnline(true);
+      showCode(code);
+      setStatus('waiting', 'Ready — enter code on desktop and glasses');
+      return;
+    }
     if ((desktopConn?.open || glassesConn?.open) && keepVisible) return;
 
     registering = true;

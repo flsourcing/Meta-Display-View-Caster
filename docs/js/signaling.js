@@ -2,7 +2,7 @@
  * PeerJS pairing + WebRTC — runs entirely from GitHub Pages.
  */
 
-const APP_VERSION = '15';
+const APP_VERSION = '16';
 
 function generateCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -60,7 +60,7 @@ function waitForConnection(conn, ms = 30000) {
     conn.once('open', () => res(conn));
     conn.once('error', rej);
     conn.once('close', () => rej(new Error('Connection closed.')));
-  }), ms, 'Could not find phone relay. Keep relay.html open on your phone, then try again.');
+  }), ms, 'Could not find phone relay. On phone: open relay.html and wait for the green dot.');
 }
 
 function waitForRelayAck(conn, ms = 25000) {
@@ -78,7 +78,7 @@ function waitForRelayAck(conn, ms = 25000) {
     }
     conn.on('data', onData);
     conn.on('close', onClose);
-  }), ms, 'Phone relay did not respond. Keep relay.html open and try again.');
+  }), ms, 'Phone relay did not respond. Refresh relay.html on your phone.');
 }
 
 function createPeer(id) {
@@ -90,38 +90,49 @@ async function createPeerWithRetry(id, attempts = 3) {
   for (let i = 0; i < attempts; i += 1) {
     const peer = createPeer(id);
     try {
-      await waitForPeerOpen(peer, 15000);
+      await waitForPeerOpen(peer, 12000);
       return peer;
     } catch (err) {
       lastErr = err;
       peer.destroy();
-      if (i < attempts - 1) await sleep(500);
+      if (i < attempts - 1) await sleep(400);
     }
   }
   throw lastErr || new Error('Could not join pairing network.');
 }
 
-async function connectToRelay(code, peer, role) {
+async function connectToRelay(code, peer, role, onStatus) {
   const relayId = peerIdForCode(code);
-  const attempts = window.CASTER_CONFIG?.CONNECT_ATTEMPTS || 6;
-  const timeoutMs = window.CASTER_CONFIG?.CONNECT_TIMEOUT_MS || 10000;
-  const retryMs = window.CASTER_CONFIG?.CONNECT_RETRY_MS || 500;
+  const totalMs = window.CASTER_CONFIG?.CONNECT_TOTAL_MS || 22000;
+  const timeoutMs = window.CASTER_CONFIG?.CONNECT_TIMEOUT_MS || 7000;
+  const retryMs = window.CASTER_CONFIG?.CONNECT_RETRY_MS || 400;
+  const deadline = Date.now() + totalMs;
   let lastErr;
+  let pass = 0;
 
-  for (let i = 0; i < attempts; i += 1) {
+  while (Date.now() < deadline) {
+    pass += 1;
+    onStatus?.(pass === 1 ? 'Finding phone relay…' : 'Still trying…');
+    let conn;
     try {
-      const conn = peer.connect(relayId, { reliable: true });
-      await waitForConnection(conn, timeoutMs);
+      const remaining = deadline - Date.now();
+      if (remaining <= 500) break;
+      conn = peer.connect(relayId, { reliable: true });
+      await waitForConnection(conn, Math.min(timeoutMs, remaining));
       sendData(conn, { type: 'hello', role, peerId: peer.id });
-      await waitForRelayAck(conn, 8000);
+      const ackMs = Math.min(6000, deadline - Date.now());
+      if (ackMs <= 500) throw new Error('Timed out waiting for phone relay.');
+      await waitForRelayAck(conn, ackMs);
       return conn;
     } catch (err) {
       lastErr = err;
-      if (i < attempts - 1) await sleep(retryMs);
+      try { conn?.close?.(); } catch { /* ignore */ }
+      const wait = Math.min(retryMs, deadline - Date.now());
+      if (wait > 0) await sleep(wait);
     }
   }
 
-  throw lastErr || new Error('Could not find phone relay. Keep relay.html open on your phone.');
+  throw lastErr || new Error('Timed out. On phone: open relay.html, wait for the green dot, then try again.');
 }
 
 function sendData(conn, data) {
@@ -137,6 +148,7 @@ window.CasterSignaling = {
   createPeer,
   createPeerWithRetry,
   connectToRelay,
+  withTimeout,
   waitForPeerOpen,
   waitForConnection,
   waitForRelayAck,

@@ -21,7 +21,6 @@
   let activeCall = null;
   let connected = false;
   let connecting = false;
-  let peerReady = null;
 
   const params = new URLSearchParams(location.search);
   const urlCode = params.get('code')?.replace(/\D/g, '').slice(0, 6);
@@ -65,6 +64,7 @@
     els.viewerSection.classList.add('hidden');
     els.connectSection.classList.remove('hidden');
     els.connectBtn.disabled = false;
+    els.connectBtn.textContent = 'Connect';
     setStatus('waiting', 'Enter code from phone relay');
     showError('');
   }
@@ -112,36 +112,57 @@
     }
 
     connecting = true;
-    els.connectBtn.disabled = true;
+    els.connectBtn.disabled = false;
+    els.connectBtn.textContent = 'Cancel';
     showError('');
-    setStatus('waiting', 'Connecting…');
+    setStatus('waiting', 'Joining network…');
 
     try {
-      const p = await ensurePeer();
-      dataConn = await CasterSignaling.connectToRelay(code, p, 'desktop');
+      const p = await CasterSignaling.withTimeout(
+        ensurePeer(),
+        12000,
+        'Could not reach pairing network. Check your internet.',
+      );
+      dataConn = await CasterSignaling.connectToRelay(
+        code,
+        p,
+        'desktop',
+        (msg) => setStatus('waiting', msg),
+      );
       bindRelayMessages();
       connected = true;
+      els.connectBtn.textContent = 'Connect';
+      els.connectBtn.disabled = true;
       showViewer(code);
     } catch (err) {
       console.error(err);
-      showError(`${err.message || 'Connection failed.'} Keep relay.html open on your phone and try again.`);
-      setStatus('waiting', 'Enter code from phone relay');
+      showError(err.message || 'Connection failed.');
+      setStatus('error', 'Could not connect');
+      els.connectBtn.textContent = 'Connect';
       els.connectBtn.disabled = false;
     } finally {
       connecting = false;
     }
   }
 
-  els.connectBtn.addEventListener('click', connect);
-  els.codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); });
+  els.connectBtn.addEventListener('click', () => {
+    if (connecting) {
+      connecting = false;
+      els.connectBtn.textContent = 'Connect';
+      els.connectBtn.disabled = false;
+      setStatus('waiting', 'Enter code from phone relay');
+      showError('Cancelled.');
+      return;
+    }
+    connect();
+  });
+  els.codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !connecting) connect(); });
   els.codeInput.addEventListener('input', () => {
     els.codeInput.value = els.codeInput.value.replace(/\D/g, '').slice(0, 6);
   });
 
   setStatus('waiting', 'Enter code from phone relay');
-  peerReady = ensurePeer().catch(() => {});
+  ensurePeer().catch(() => {});
 
-  if (urlCode?.length === 6) {
-    peerReady.finally(() => connect());
-  }
+  if (urlCode?.length === 6) setTimeout(connect, 300);
 })();
