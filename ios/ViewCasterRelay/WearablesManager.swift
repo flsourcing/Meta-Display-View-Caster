@@ -300,7 +300,21 @@ final class WearablesManager: ObservableObject {
         try session.start()
 
         status("Waiting for glasses (wear them, Bluetooth on)…")
-        try await waitForDeviceSessionStarted(session, status: status)
+        let deadline = Date().addingTimeInterval(45)
+        var sessionReady = false
+        for await state in session.stateStream() {
+            NSLog("ViewCaster: deviceSession \(state)")
+            if state == .started {
+                sessionReady = true
+                break
+            }
+            if Date() > deadline {
+                throw WearablesStreamError.deviceTimeout
+            }
+        }
+        if !sessionReady {
+            throw WearablesStreamError.sessionFailed("Glasses session closed")
+        }
 
         status("Starting camera stream…")
         let config = StreamConfiguration(
@@ -324,27 +338,6 @@ final class WearablesManager: ObservableObject {
 
         isStreaming = true
         lastMetaSyncNote = "Glasses stream active"
-    }
-
-    private func waitForDeviceSessionStarted(
-        _ session: DeviceSession,
-        status: @escaping (String) -> Void
-    ) async throws {
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask { @MainActor in
-                for await state in session.stateStream() {
-                    NSLog("ViewCaster: deviceSession \(state)")
-                    if state == .started { return }
-                }
-                throw WearablesStreamError.sessionFailed("Glasses session closed")
-            }
-            group.addTask {
-                try await Task.sleep(nanoseconds: 45_000_000_000)
-                throw WearablesStreamError.deviceTimeout
-            }
-            defer { group.cancelAll() }
-            _ = try await group.next()
-        }
     }
 
     func stopGlassesStream() {
