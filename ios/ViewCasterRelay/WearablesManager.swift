@@ -86,10 +86,10 @@ final class WearablesManager: ObservableObject {
         ]
         if let selector = deviceSelector {
             tasks.append(Task { [weak self] in
-                for await device in selector.activeDeviceStream() {
+                for await deviceId in selector.activeDeviceStream() {
                     await MainActor.run { [weak self] in
-                        guard let self, let device else { return }
-                        let name = device.nameOrId()
+                        guard let self, let deviceId else { return }
+                        let name = self.sdk.deviceForIdentifier(deviceId)?.nameOrId() ?? deviceId
                         if self.glassesDeviceCount > 0 {
                             self.glassesDevicesLabel = "Glasses: \(self.glassesDeviceCount) detected, active: \(name)"
                         } else {
