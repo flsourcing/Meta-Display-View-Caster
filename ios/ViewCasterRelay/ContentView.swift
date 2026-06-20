@@ -45,6 +45,12 @@ final class RelayViewModel: ObservableObject {
             self?.wearables.stopGlassesStream()
             self?.webrtc.stopStream()
         }
+        signaling.onAnswer = { [weak self] sdp in
+            self?.webrtc.handleAnswer(sdp)
+        }
+        signaling.onIceCandidate = { [weak self] candidate, idx, mid in
+            self?.webrtc.handleRemoteIce(candidate: candidate, sdpMLineIndex: idx, sdpMid: mid)
+        }
     }
 
     func configureWearables() {
@@ -123,8 +129,11 @@ final class RelayViewModel: ObservableObject {
     func allowGlassesCamera() {
         Task {
             await wearables.requestGlassesCamera()
-            await wearables.refreshAfterForeground()
         }
+    }
+
+    func syncMetaStatus() {
+        Task { await wearables.refreshAfterForeground() }
     }
 
     func connectMetaAIWebApp() {
@@ -173,13 +182,16 @@ final class RelayViewModel: ObservableObject {
 
     private func beginGlassesCast() async {
         signaling.status = "Starting glasses camera…"
+        await wearables.refreshAfterForeground()
         do {
-            webrtc.startStream()
             try await wearables.startGlassesStream()
+            webrtc.startStream()
+            signaling.sendSignal(type: "stream-started")
             signaling.status = "Casting from glasses"
         } catch {
             webrtc.stopStream()
             wearables.stopGlassesStream()
+            signaling.sendSignal(type: "stream-error", payload: ["message": error.localizedDescription])
             signaling.status = error.localizedDescription
         }
     }
@@ -286,14 +298,17 @@ struct ContentView: View {
                             .multilineTextAlignment(.center)
 
                         if model.wearables.metaSetupStarted && !model.wearables.isRegistered {
-                            Button("I verified in Meta AI") {
-                                Task {
-                                    await model.wearables.refreshAfterForeground()
-                                    model.finishedMetaAISetup()
-                                }
+                            Button("Sync Meta status") {
+                                model.syncMetaStatus()
                             }
                             .font(.footnote)
                             .buttonStyle(.bordered)
+                        }
+
+                        if !model.wearables.lastMetaSyncNote.isEmpty {
+                            Text(model.wearables.lastMetaSyncNote)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
 
                         Label(model.wearables.cameraGranted ? "2. Glasses camera allowed" : "2. Allow glasses camera",
@@ -315,6 +330,11 @@ struct ContentView: View {
                             model.connectMetaAIWebApp()
                         }
                         .buttonStyle(.bordered)
+
+                        Button("Sync Meta status") {
+                            model.syncMetaStatus()
+                        }
+                        .font(.footnote)
 
                         Button("Reset Meta connection") {
                             model.resetMetaConnection()

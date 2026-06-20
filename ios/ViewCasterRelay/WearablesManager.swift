@@ -13,6 +13,7 @@ final class WearablesManager: ObservableObject {
     @Published private(set) var canRequestCamera = false
     @Published private(set) var metaSetupStarted = false
     @Published private(set) var registrationStateName = "available"
+    @Published private(set) var lastMetaSyncNote = ""
 
     var onVideoFrame: ((VideoFrame) -> Void)?
 
@@ -33,6 +34,10 @@ final class WearablesManager: ObservableObject {
         metaSetupStarted = UserDefaults.standard.bool(forKey: Self.metaSetupKey)
         registrationConfirmed = UserDefaults.standard.bool(forKey: Self.registrationConfirmedKey)
         cameraPermissionConfirmed = UserDefaults.standard.bool(forKey: Self.cameraConfirmedKey)
+        applyPersistedMetaState()
+    }
+
+    private func applyPersistedMetaState() {
         if registrationConfirmed {
             isRegistered = true
             registrationLabel = "Meta AI connected"
@@ -89,7 +94,7 @@ final class WearablesManager: ObservableObject {
                 enableCameraStep()
             } else if metaSetupStarted {
                 unlockCameraStepIfNeeded()
-                registrationLabel = "Returned from Meta AI — tap Allow glasses camera"
+                registrationLabel = "Returned from Meta AI — tap Sync Meta status"
             } else {
                 isRegistered = false
                 canRequestCamera = false
@@ -103,7 +108,7 @@ final class WearablesManager: ObservableObject {
                 enableCameraStep()
             } else if metaSetupStarted {
                 unlockCameraStepIfNeeded()
-                registrationLabel = "Meta state unavailable — try Allow glasses camera anyway"
+                registrationLabel = "Meta state unavailable — tap Sync Meta status"
             } else {
                 isRegistered = false
                 canRequestCamera = false
@@ -124,6 +129,7 @@ final class WearablesManager: ObservableObject {
         isRegistered = true
         enableCameraStep()
         registrationLabel = "Meta AI connected"
+        lastMetaSyncNote = "Registration confirmed"
     }
 
     private func confirmCameraPermission() {
@@ -132,6 +138,7 @@ final class WearablesManager: ObservableObject {
         cameraGranted = true
         cameraLabel = "Glasses camera allowed"
         canRequestCamera = true
+        lastMetaSyncNote = "Camera permission confirmed"
     }
 
     private func enableCameraStep() {
@@ -185,6 +192,7 @@ final class WearablesManager: ObservableObject {
         isRegistered = false
         cameraGranted = false
         canRequestCamera = false
+        lastMetaSyncNote = ""
         UserDefaults.standard.removeObject(forKey: Self.metaSetupKey)
         UserDefaults.standard.removeObject(forKey: Self.registrationConfirmedKey)
         UserDefaults.standard.removeObject(forKey: Self.cameraConfirmedKey)
@@ -201,13 +209,8 @@ final class WearablesManager: ObservableObject {
     func handleCallback(_ url: URL) async {
         NSLog("ViewCaster: handleCallback \(url.absoluteString)")
         do {
-            let handled = try await sdk.handleUrl(url)
-            if handled {
-                confirmRegistration()
-                await syncCameraPermissionStatus()
-            } else {
-                await refreshAfterForeground()
-            }
+            _ = try await sdk.handleUrl(url)
+            await refreshAfterForeground()
         } catch {
             registrationLabel = "Meta callback error: \(error.localizedDescription)"
             await refreshAfterForeground()
@@ -216,22 +219,33 @@ final class WearablesManager: ObservableObject {
 
     func refreshAfterForeground() async {
         unlockCameraStepIfNeeded()
-        await syncCameraPermissionStatus()
-        if registrationConfirmed {
-            isRegistered = true
-            registrationLabel = "Meta AI connected"
-            enableCameraStep()
-        }
+        await syncMetaStatus()
     }
 
-    private func syncCameraPermissionStatus() async {
-        guard let status = try? await sdk.checkPermissionStatus(.camera) else { return }
-        confirmRegistration()
-        enableCameraStep()
-        if status == .granted {
-            confirmCameraPermission()
-        } else if !cameraGranted {
-            cameraLabel = "Tap Allow glasses camera"
+    /// Query Meta SDK — never opens Meta AI.
+    func syncMetaStatus() async {
+        if registrationStateName.contains("registered") {
+            confirmRegistration()
+        }
+
+        do {
+            let status = try await sdk.checkPermissionStatus(.camera)
+            confirmRegistration()
+            enableCameraStep()
+            if status == .granted {
+                confirmCameraPermission()
+            } else if !cameraGranted {
+                cameraLabel = "Tap Allow glasses camera (or tap Sync Meta status after allowing in Meta AI)"
+                lastMetaSyncNote = "Camera not granted yet — sync after allowing in Meta AI"
+            }
+        } catch {
+            lastMetaSyncNote = "Sync: \(error.localizedDescription)"
+            NSLog("ViewCaster: checkPermissionStatus failed: \(error.localizedDescription)")
+            if registrationConfirmed {
+                isRegistered = true
+                registrationLabel = "Meta AI connected"
+                enableCameraStep()
+            }
         }
     }
 
@@ -240,6 +254,10 @@ final class WearablesManager: ObservableObject {
             cameraLabel = "Connect Meta AI first (step 1)"
             return
         }
+
+        await syncMetaStatus()
+        if cameraGranted { return }
+
         unlockCameraStepIfNeeded()
         cameraLabel = "Opening Meta AI for camera permission…"
         do {
@@ -250,23 +268,25 @@ final class WearablesManager: ObservableObject {
                 confirmCameraPermission()
             } else {
                 cameraLabel = "Camera denied — allow in Meta AI app"
+                lastMetaSyncNote = "Request returned: \(status)"
             }
         } catch {
             cameraLabel = "Permission error: \(error.localizedDescription)"
-            await syncCameraPermissionStatus()
+            await syncMetaStatus()
         }
     }
 
     func startGlassesStream() async throws {
-        if !isRegistered {
-            await syncCameraPermissionStatus()
-        }
-        guard isRegistered || metaSetupStarted || registrationConfirmed else {
+        await syncMetaStatus()
+
+        guard isRegistered || registrationConfirmed || metaSetupStarted else {
             throw WearablesStreamError.notRegistered
         }
+
         if !cameraGranted {
-            await requestGlassesCamera()
-            guard cameraGranted else {
+            if let status = try? await sdk.checkPermissionStatus(.camera), status == .granted {
+                confirmCameraPermission()
+            } else {
                 throw WearablesStreamError.cameraDenied
             }
         }
@@ -296,6 +316,7 @@ final class WearablesManager: ObservableObject {
 
         await stream.start()
         isStreaming = true
+        lastMetaSyncNote = "Glasses stream active"
     }
 
     func stopGlassesStream() {
@@ -314,9 +335,12 @@ final class WearablesManager: ObservableObject {
 
         var errorDescription: String? {
             switch self {
-            case .notRegistered: return "Connect Meta AI first."
-            case .cameraDenied: return "Allow glasses camera in Meta AI."
-            case .streamFailed: return "Could not start glasses stream."
+            case .notRegistered:
+                return "Connect Meta AI first, then tap Sync Meta status."
+            case .cameraDenied:
+                return "Allow glasses camera in Meta AI, return here, tap Sync Meta status, then Live Stream again."
+            case .streamFailed:
+                return "Could not start glasses stream — check glasses are connected in Meta AI."
             }
         }
     }

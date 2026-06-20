@@ -65,6 +65,21 @@ final class WebRTCManager: NSObject {
         videoSource.capturer(frameCapturer, didCapture: videoFrame)
     }
 
+    func handleAnswer(_ sdp: String) {
+        guard let pc else { return }
+        let desc = RTCSessionDescription(type: .answer, sdp: sdp)
+        pc.setRemoteDescription(desc) { error in
+            if let error {
+                NSLog("ViewCaster: setRemoteDescription failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func handleRemoteIce(candidate: String, sdpMLineIndex: Int32, sdpMid: String?) {
+        let ice = RTCIceCandidate(sdp: candidate, sdpMLineIndex: sdpMLineIndex, sdpMid: sdpMid)
+        pc?.add(ice)
+    }
+
     func stopStream() {
         frameCapturer = nil
         localVideoTrack = nil
