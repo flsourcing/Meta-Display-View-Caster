@@ -1,5 +1,6 @@
 import UIKit
 
+@MainActor
 enum MetaAIDeepLink {
     static func openMetaAI() {
         guard let url = URL(string: "fb-viewapp://") else { return }
