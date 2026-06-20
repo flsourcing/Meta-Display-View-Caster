@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=600, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>View Caster — Glasses</title>
-  <link rel="stylesheet" href="css/style.css?v=10">
+  <link rel="stylesheet" href="css/style.css?v=11">
 </head>
 <body class="glasses">
   <div class="container">
@@ -13,14 +13,14 @@
 
     <div id="pairing-view">
       <p class="code-timer">Enter code from phone relay</p>
-      <p id="code-timer" class="code-timer">↑↓ digit · ←→ move · Enter confirm</p>
+      <p id="code-timer" class="code-timer">↑↓ digit · ←→ move · Enter next · Backspace delete</p>
 
       <div id="code-picker" class="code-picker" tabindex="0" role="group" aria-label="Pairing code">
         <div id="code-slots" class="code-slots" aria-live="polite"></div>
       </div>
 
       <div class="glasses-actions">
-        <button id="clear-btn" type="button" class="btn btn-primary glasses-action-btn" tabindex="0">Clear</button>
+        <button id="backspace-btn" type="button" class="btn btn-primary glasses-action-btn" tabindex="0">Backspace</button>
         <button id="join-btn" type="button" class="btn btn-stream glasses-action-btn" tabindex="0">Connect</button>
       </div>
 
@@ -41,9 +41,9 @@
 
   <footer>Meta Display View Caster</footer>
 
-  <script src="js/peerjs.min.js?v=10"></script>
-  <script src="config.js?v=10"></script>
-  <script src="js/signaling.js?v=10"></script>
-  <script src="js/glasses.js?v=10"></script>
+  <script src="js/peerjs.min.js?v=11"></script>
+  <script src="config.js?v=11"></script>
+  <script src="js/signaling.js?v=11"></script>
+  <script src="js/glasses.js?v=11"></script>
 </body>
 </html>

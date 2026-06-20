@@ -18,17 +18,19 @@
     codePicker: document.getElementById('code-picker'),
     codeSlots: document.getElementById('code-slots'),
     joinBtn: document.getElementById('join-btn'),
-    clearBtn: document.getElementById('clear-btn'),
+    backspaceBtn: document.getElementById('backspace-btn'),
   };
 
   const SLOT_COUNT = 6;
+  const KEY_COOLDOWN_MS = 450;
+
   let slots = Array(SLOT_COUNT).fill(0);
   let slotIndex = 0;
   let peer = null;
   let dataConn = null;
   let connected = false;
   let streaming = false;
-  let lastEnterMs = 0;
+  let lastKeyAction = { key: '', at: 0 };
 
   if (presetCode.length === SLOT_COUNT) {
     slots = presetCode.split('').map((d) => parseInt(d, 10));
@@ -50,6 +52,16 @@
     }).join('');
   }
 
+  function isDuplicateKey(key) {
+    if (key === 'Unidentified') return false;
+    const now = Date.now();
+    if (lastKeyAction.key === key && now - lastKeyAction.at < KEY_COOLDOWN_MS) {
+      return true;
+    }
+    lastKeyAction = { key, at: now };
+    return false;
+  }
+
   function bumpDigit(delta) {
     slots[slotIndex] = (slots[slotIndex] + delta + 10) % 10;
     renderSlots();
@@ -60,27 +72,25 @@
     renderSlots();
   }
 
-  function clearCode() {
-    slots = Array(SLOT_COUNT).fill(0);
-    slotIndex = 0;
+  function backspace() {
+    if (slots[slotIndex] !== 0) {
+      slots[slotIndex] = 0;
+    } else if (slotIndex > 0) {
+      slotIndex -= 1;
+      slots[slotIndex] = 0;
+    }
     renderSlots();
     els.codePicker.focus();
-  }
-
-  function onEnterAction(fn) {
-    const now = Date.now();
-    if (now - lastEnterMs < 400) return;
-    lastEnterMs = now;
-    fn();
   }
 
   function bindEnterOnly(el, fn) {
     if (!el) return;
     el.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
+      if (e.repeat || isDuplicateKey('Enter-btn')) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      onEnterAction(fn);
+      fn();
     });
     el.addEventListener('click', (e) => {
       e.preventDefault();
@@ -88,42 +98,56 @@
     });
   }
 
-  function setupPickerKeys() {
-    els.codePicker.addEventListener('keydown', (e) => {
-      if (connected) return;
+  function handlePickerKey(e) {
+    if (connected) return;
 
-      switch (e.key) {
-        case 'ArrowUp':
-          e.preventDefault();
-          bumpDigit(1);
-          break;
-        case 'ArrowDown':
-          e.preventDefault();
-          bumpDigit(-1);
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
+    const key = e.key;
+    if (e.repeat) {
+      e.preventDefault();
+      return;
+    }
+    if (isDuplicateKey(`picker-${key}`)) {
+      e.preventDefault();
+      return;
+    }
+
+    switch (key) {
+      case 'ArrowUp':
+        e.preventDefault();
+        bumpDigit(1);
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        bumpDigit(-1);
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        moveSlot(1);
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        moveSlot(-1);
+        break;
+      case 'Backspace':
+        e.preventDefault();
+        backspace();
+        break;
+      case 'Enter':
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (slotIndex < SLOT_COUNT - 1) {
           moveSlot(1);
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          moveSlot(-1);
-          break;
-        case 'Enter':
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          onEnterAction(() => {
-            if (slotIndex < SLOT_COUNT - 1) {
-              moveSlot(1);
-            } else {
-              els.joinBtn.focus();
-            }
-          });
-          break;
-        default:
-          break;
-      }
-    });
+        } else {
+          els.joinBtn.focus();
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  function setupPickerKeys() {
+    els.codePicker.addEventListener('keydown', handlePickerKey);
   }
 
   function showConnected() {
@@ -190,7 +214,7 @@
     }
   }
 
-  bindEnterOnly(els.clearBtn, clearCode);
+  bindEnterOnly(els.backspaceBtn, backspace);
   bindEnterOnly(els.joinBtn, joinRelay);
   bindEnterOnly(els.streamBtn, toggleStream);
   setupPickerKeys();
