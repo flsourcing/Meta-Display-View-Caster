@@ -46,10 +46,16 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.team_id != ''
         run: |
           PLIST="ios/build/ViewCasterRelay.xcarchive/Products/Applications/ViewCasterRelay.app/Info.plist"
+          TEAM="${{ github.event.inputs.team_id }}"
+          /usr/libexec/PlistBuddy -c "Add :MWDAT dict" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :MWDAT:AppLinkURLScheme string 'viewcaster://'" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :MWDAT:AppLinkURLScheme 'viewcaster://'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :MWDAT:MetaAppID string '0'" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :MWDAT:MetaAppID '0'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :MWDAT:TeamID string '$TEAM'" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :MWDAT:TeamID '$TEAM'" "$PLIST"
+          echo "MWDAT in built app:"
           /usr/libexec/PlistBuddy -c "Print :MWDAT" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Delete :MWDAT:TeamID" "$PLIST" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Add :MWDAT:TeamID string '${{ github.event.inputs.team_id }}'" "$PLIST"
-          echo "Verified MWDAT.TeamID=$(/usr/libexec/PlistBuddy -c 'Print :MWDAT:TeamID' "$PLIST")"
 
       - name: Package IPA for Sideloadly
         run: |

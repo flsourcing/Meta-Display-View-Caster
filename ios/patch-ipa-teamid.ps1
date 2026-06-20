@@ -31,10 +31,13 @@ import plistlib, sys
 path, team = sys.argv[1], sys.argv[2]
 with open(path, 'rb') as f:
     pl = plistlib.load(f)
-pl.setdefault('MWDAT', {})['TeamID'] = team
+mw = pl.setdefault('MWDAT', {})
+mw['AppLinkURLScheme'] = 'viewcaster://'
+mw['MetaAppID'] = '0'
+mw['TeamID'] = team
 with open(path, 'wb') as f:
     plistlib.dump(pl, f)
-print('Patched MWDAT.TeamID =', team)
+print('Patched MWDAT:', mw)
 "@
     & python -c $py $plistPath $TeamId
     if ($LASTEXITCODE -ne 0) { throw "Python plist patch failed" }

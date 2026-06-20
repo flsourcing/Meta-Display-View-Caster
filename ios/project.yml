@@ -27,6 +27,9 @@ targets:
       properties:
         CFBundleDisplayName: View Caster Relay
         UILaunchScreen: {}
+        MWDAT:
+          AppLinkURLScheme: viewcaster://
+          MetaAppID: "0"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mdvc.viewcasterrelay
