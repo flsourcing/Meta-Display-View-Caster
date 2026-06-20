@@ -82,7 +82,7 @@
     try {
       peer?.destroy();
       currentCode = code;
-      peer = CasterSignaling.createPeer(CasterSignaling.camPeerIdForCode(code));
+      peer = await CasterSignaling.createPeerWithFallback(CasterSignaling.camPeerIdForCode(code));
 
       peer.on('connection', (conn) => {
         dataConn = conn;
@@ -110,7 +110,6 @@
         els.connectBtn.disabled = false;
       });
 
-      await CasterSignaling.waitForPeerOpen(peer);
       ready = true;
       els.codeDisplay.textContent = code;
       els.readyView.classList.remove('hidden');

@@ -4,13 +4,12 @@
 window.CASTER_CONFIG = {
   PEER_PREFIX: 'mdvc-',
   CAM_PREFIX: 'mdvc-cam-',
-  CODE_ROTATION_MS: 60_000,
+  CODE_ROTATION_MS: 180_000,
 
-  // PeerJS public cloud (handles pairing signaling in the browser)
-  PEER_HOST: '0.peerjs.com',
-  PEER_PORT: 443,
-  PEER_PATH: '/',
-  PEER_SECURE: true,
+  // PeerJS signaling — try each host in order until one connects
+  PEER_HOSTS: [
+    { host: '0.peerjs.com', port: 443, path: '/', secure: true, key: 'peerjs' },
+  ],
 
   ICE_SERVERS: [
     { urls: 'stun:stun.l.google.com:19302' },

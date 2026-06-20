@@ -98,6 +98,42 @@
     });
   }
 
+  async function tryConnect(code, attempt) {
+    const glassesPeerId = CasterSignaling.peerIdForCode(code);
+
+    peer?.destroy();
+    peer = null;
+    dataConn = null;
+
+    peer = await CasterSignaling.createPeerWithFallback();
+    setupPeerHandlers();
+
+    setStatus('waiting', attempt > 1 ? `Finding glasses… (attempt ${attempt})` : 'Finding glasses…');
+
+    dataConn = peer.connect(glassesPeerId, { reliable: true });
+    await CasterSignaling.waitForConnection(dataConn);
+
+    dataConn.on('data', (msg) => {
+      if (msg?.type === 'stream-started') {
+        setViewerStatus('connected', 'Receiving live stream…');
+      } else if (msg?.type === 'stop-stream') {
+        cleanupCall();
+      }
+    });
+
+    dataConn.on('close', () => {
+      if (connected) {
+        showError('Glasses disconnected.');
+        resetToConnect();
+      }
+    });
+
+    CasterSignaling.sendData(dataConn, { type: 'hello', peerId: peer.id });
+    connected = true;
+    showViewer(code);
+    showError('');
+  }
+
   async function connect() {
     if (connecting) return;
 
@@ -112,48 +148,34 @@
     els.connectBtn.disabled = true;
     setStatus('waiting', 'Joining network…');
 
-    const glassesPeerId = CasterSignaling.peerIdForCode(code);
+    const maxAttempts = 3;
+    let lastError;
 
-    try {
-      peer = CasterSignaling.createPeer();
-      setupPeerHandlers();
-
-      await CasterSignaling.waitForPeerOpen(peer);
-      setStatus('waiting', 'Finding glasses…');
-
-      dataConn = peer.connect(glassesPeerId, { reliable: true });
-      await CasterSignaling.waitForConnection(dataConn);
-
-      dataConn.on('data', (msg) => {
-        if (msg?.type === 'stream-started') {
-          setViewerStatus('connected', 'Receiving live stream…');
-        } else if (msg?.type === 'stop-stream') {
-          cleanupCall();
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        await tryConnect(code, attempt);
+        connecting = false;
+        return;
+      } catch (err) {
+        lastError = err;
+        console.warn(`[caster] connect attempt ${attempt} failed:`, err);
+        if (attempt < maxAttempts) {
+          setStatus('waiting', `Retrying… (${attempt + 1}/${maxAttempts})`);
+          await new Promise((r) => setTimeout(r, 2000));
         }
-      });
-
-      dataConn.on('close', () => {
-        if (connected) {
-          showError('Glasses disconnected.');
-          resetToConnect();
-        }
-      });
-
-      CasterSignaling.sendData(dataConn, { type: 'hello', peerId: peer.id });
-      connected = true;
-      connecting = false;
-      showViewer(code);
-      showError('');
-    } catch (err) {
-      console.error('[caster] connect failed:', err);
-      connecting = false;
-      showError(err.message || 'Could not connect. Use the current code from glasses.html and try again.');
-      els.connectBtn.disabled = false;
-      setStatus('waiting', 'Enter code from glasses');
-      peer?.destroy();
-      peer = null;
-      dataConn = null;
+      }
     }
+
+    connecting = false;
+    showError(
+      lastError?.message
+        || 'Could not connect. On glasses, wait for "Ready — enter this code on desktop", then enter the code shown right now.',
+    );
+    els.connectBtn.disabled = false;
+    setStatus('waiting', 'Enter code from glasses');
+    peer?.destroy();
+    peer = null;
+    dataConn = null;
   }
 
   els.connectBtn.addEventListener('click', connect);

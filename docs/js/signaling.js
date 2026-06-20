@@ -2,7 +2,7 @@
  * Client-side pairing + WebRTC via PeerJS (no custom server — works on GitHub Pages).
  */
 
-const APP_VERSION = '5';
+const APP_VERSION = '6';
 
 function generateCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -22,22 +22,31 @@ function hasCameraSupport() {
   return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 }
 
-function createPeerOptions(id) {
+function getPeerHosts() {
   const cfg = window.CASTER_CONFIG || {};
-  const options = {
+  if (cfg.PEER_HOSTS?.length) return cfg.PEER_HOSTS;
+  return [{
     host: cfg.PEER_HOST || '0.peerjs.com',
     port: cfg.PEER_PORT || 443,
     path: cfg.PEER_PATH || '/',
     secure: cfg.PEER_SECURE !== false,
-    debug: cfg.PEER_DEBUG || 1,
+    key: cfg.PEER_KEY || 'peerjs',
+  }];
+}
+
+function createPeerOptions(id, hostIndex = 0) {
+  const hosts = getPeerHosts();
+  const server = hosts[hostIndex] || hosts[0];
+  const options = {
+    host: server.host,
+    port: server.port,
+    path: server.path,
+    secure: server.secure !== false,
+    key: server.key || 'peerjs',
+    debug: 2,
     config: {
-      iceServers: cfg.ICE_SERVERS || [
+      iceServers: window.CASTER_CONFIG?.ICE_SERVERS || [
         { urls: 'stun:stun.l.google.com:19302' },
-        {
-          urls: 'turn:openrelay.metered.ca:80',
-          username: 'openrelayproject',
-          credential: 'openrelayproject',
-        },
       ],
     },
   };
@@ -62,7 +71,7 @@ function withTimeout(promise, ms, message) {
   });
 }
 
-function waitForPeerOpen(peer, timeoutMs = 15000) {
+function waitForPeerOpen(peer, timeoutMs = 20000) {
   if (peer.destroyed) {
     return Promise.reject(new Error('Peer was destroyed before it could connect.'));
   }
@@ -79,7 +88,7 @@ function waitForPeerOpen(peer, timeoutMs = 15000) {
   );
 }
 
-function waitForConnection(conn, timeoutMs = 15000) {
+function waitForConnection(conn, timeoutMs = 30000) {
   if (conn.open) return Promise.resolve(conn);
 
   return withTimeout(
@@ -89,7 +98,7 @@ function waitForConnection(conn, timeoutMs = 15000) {
       conn.once('close', () => reject(new Error('Connection closed before pairing completed.')));
     }),
     timeoutMs,
-    'Glasses not found. Open glasses.html, wait for the code to appear, then enter the current code.',
+    'Could not find glasses with that code. Make sure glasses.html is open, the code matches exactly, and try again immediately.',
   );
 }
 
@@ -99,8 +108,26 @@ function sendData(conn, payload) {
   }
 }
 
-function createPeer(id) {
-  return new Peer(createPeerOptions(id));
+function createPeer(id, hostIndex = 0) {
+  return new Peer(createPeerOptions(id, hostIndex));
+}
+
+async function createPeerWithFallback(id) {
+  const hosts = getPeerHosts();
+  let lastError;
+
+  for (let i = 0; i < hosts.length; i += 1) {
+    const peer = createPeer(id, i);
+    try {
+      await waitForPeerOpen(peer);
+      return peer;
+    } catch (err) {
+      lastError = err;
+      peer.destroy();
+    }
+  }
+
+  throw lastError || new Error('Could not connect to the pairing network.');
 }
 
 window.CasterSignaling = {
@@ -111,6 +138,7 @@ window.CasterSignaling = {
   hasCameraSupport,
   createPeerOptions,
   createPeer,
+  createPeerWithFallback,
   withTimeout,
   waitForPeerOpen,
   waitForConnection,

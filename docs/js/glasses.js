@@ -1,6 +1,5 @@
 /**
  * Glasses web app — pairing, connected state, Live Stream control
- * Camera streams via phone capture.html when unavailable on Meta Display.
  */
 
 (function () {
@@ -19,7 +18,7 @@
     sessionCode: document.getElementById('session-code'),
   };
 
-  const ROTATION_MS = window.CASTER_CONFIG?.CODE_ROTATION_MS || 60_000;
+  const ROTATION_MS = window.CASTER_CONFIG?.CODE_ROTATION_MS || 180_000;
 
   let peer = null;
   let dataConn = null;
@@ -34,7 +33,8 @@
   let codeExpiresAt = 0;
   let timerInterval = null;
   let rotationTimeout = null;
-  let starting = false;
+  let registering = false;
+  let reconnectTimer = null;
 
   function setStatus(kind, text) {
     els.status.className = `status ${kind}`;
@@ -46,7 +46,7 @@
     els.codeTimer.textContent = connected
       ? 'Session active'
       : remaining > 0
-        ? `New code in ${remaining}s`
+        ? `Code expires in ${remaining}s`
         : 'Updating code…';
   }
 
@@ -64,9 +64,68 @@
     return `Open ${CAPTURE_PAGE} on your phone with code ${currentCode}, then tap Live Stream here.`;
   }
 
+  function attachPeerListeners() {
+    peer.on('connection', (conn) => {
+      dataConn = conn;
+
+      conn.on('open', () => {
+        showConnected();
+      });
+
+      conn.on('data', (msg) => {
+        if (msg?.type === 'hello' && msg.peerId) {
+          desktopPeerId = msg.peerId;
+        } else if (msg?.type === 'stream-started' && usingPhoneCamera) {
+          streaming = true;
+          els.streamBtn.textContent = 'Stop Stream';
+          els.streamBtn.classList.add('active');
+          els.streamHint.textContent = 'Casting to desktop viewer…';
+        } else if (msg?.type === 'stop-stream' && usingPhoneCamera) {
+          stopStream(false);
+        }
+      });
+
+      conn.on('close', () => {
+        if (connected) showPairing();
+      });
+    });
+
+    peer.on('disconnected', () => {
+      if (connected) return;
+      setStatus('error', 'Reconnecting…');
+      scheduleReconnect(currentCode);
+    });
+
+    peer.on('close', () => {
+      if (!connected && currentCode) {
+        scheduleReconnect(currentCode);
+      }
+    });
+
+    peer.on('error', (err) => {
+      if (err.type === 'unavailable-id') {
+        registerCode(CasterSignaling.generateCode());
+        return;
+      }
+      console.error('[caster] peer error:', err);
+      if (!connected && currentCode) {
+        setStatus('error', 'Network error — reconnecting…');
+        scheduleReconnect(currentCode);
+      }
+    });
+  }
+
+  function scheduleReconnect(code) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => {
+      if (!connected && code) registerCode(code, true);
+    }, 1500);
+  }
+
   function showConnected() {
     connected = true;
     clearTimeout(rotationTimeout);
+    clearTimeout(reconnectTimer);
     els.pairingView.classList.add('hidden');
     els.connectedView.classList.remove('hidden');
     els.connectedLabel.textContent = 'Connected';
@@ -82,7 +141,6 @@
     streaming = false;
     usingPhoneCamera = false;
     desktopPeerId = null;
-    currentCode = '';
     stopStream(false);
     camConn?.close();
     camConn = null;
@@ -92,8 +150,11 @@
     els.streamBtn.textContent = 'Live Stream';
     els.streamBtn.classList.remove('active');
     els.streamHint.textContent = 'Cast your view to the desktop viewer.';
-    setStatus('waiting', 'Waiting for pairing');
-    scheduleRotation();
+    if (currentCode) {
+      registerCode(currentCode, true);
+    } else {
+      registerCode(CasterSignaling.generateCode());
+    }
   }
 
   function destroyPeer() {
@@ -105,76 +166,38 @@
     clearTimeout(rotationTimeout);
     if (connected) return;
     rotationTimeout = setTimeout(() => {
-      if (!connected) startPairingSession();
+      if (!connected) registerCode(CasterSignaling.generateCode());
     }, ROTATION_MS);
   }
 
-  async function startPairingSession() {
-    if (connected || starting) return;
-    starting = true;
+  async function registerCode(code, keepCodeVisible = false) {
+    if (connected || registering) return;
+    registering = true;
+    clearTimeout(reconnectTimer);
+
+    if (!keepCodeVisible) {
+      els.pairCode.textContent = '······';
+      els.codeTimer.textContent = 'Connecting to network…';
+      setStatus('waiting', 'Starting…');
+    } else {
+      setStatus('waiting', 'Reconnecting…');
+    }
 
     destroyPeer();
-    const code = CasterSignaling.generateCode();
-    els.pairCode.textContent = '······';
-    els.codeTimer.textContent = 'Connecting to network…';
-    setStatus('waiting', 'Starting…');
 
     try {
-      peer = CasterSignaling.createPeer(CasterSignaling.peerIdForCode(code));
-
-      peer.on('connection', (conn) => {
-        dataConn = conn;
-
-        conn.on('open', () => {
-          showConnected();
-        });
-
-        conn.on('data', (msg) => {
-          if (msg?.type === 'hello' && msg.peerId) {
-            desktopPeerId = msg.peerId;
-          } else if (msg?.type === 'stream-started' && usingPhoneCamera) {
-            streaming = true;
-            els.streamBtn.textContent = 'Stop Stream';
-            els.streamBtn.classList.add('active');
-            els.streamHint.textContent = 'Casting to desktop viewer…';
-          } else if (msg?.type === 'stop-stream' && usingPhoneCamera) {
-            stopStream(false);
-          }
-        });
-
-        conn.on('close', () => {
-          if (connected) showPairing();
-        });
-      });
-
-      peer.on('disconnected', () => {
-        if (!connected) setStatus('error', 'Reconnecting…');
-      });
-
-      peer.on('error', (err) => {
-        if (err.type === 'unavailable-id') {
-          starting = false;
-          startPairingSession();
-          return;
-        }
-        console.error('[caster] peer error:', err);
-        if (!connected) {
-          setStatus('error', 'Network error — retrying…');
-          setTimeout(startPairingSession, 2000);
-        }
-      });
-
-      await CasterSignaling.waitForPeerOpen(peer);
+      peer = await CasterSignaling.createPeerWithFallback(CasterSignaling.peerIdForCode(code));
+      attachPeerListeners();
       showCode(code);
-      setStatus('waiting', 'Waiting for pairing');
+      setStatus('waiting', 'Ready — enter this code on desktop');
       scheduleRotation();
     } catch (err) {
-      console.error('[caster] pairing session failed:', err);
+      console.error('[caster] register failed:', err);
       els.codeTimer.textContent = err.message || 'Retrying…';
       setStatus('error', 'Retrying…');
-      setTimeout(startPairingSession, 2000);
+      scheduleReconnect(code);
     } finally {
-      starting = false;
+      registering = false;
     }
   }
 
@@ -299,5 +322,5 @@
     if (e.key === 'Enter') toggleStream();
   });
 
-  startPairingSession();
+  registerCode(CasterSignaling.generateCode());
 })();
