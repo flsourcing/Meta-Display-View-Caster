@@ -43,15 +43,17 @@ jobs:
             OTHER_SWIFT_FLAGS="-strict-concurrency=minimal"
 
       - name: Inject Team ID into built app
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.team_id != ''
+        env:
+          TEAM: ${{ github.event.inputs.team_id || 'JM52FT93Z2' }}
         run: |
           PLIST="ios/build/ViewCasterRelay.xcarchive/Products/Applications/ViewCasterRelay.app/Info.plist"
-          TEAM="${{ github.event.inputs.team_id }}"
           /usr/libexec/PlistBuddy -c "Add :MWDAT dict" "$PLIST" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Add :MWDAT:AppLinkURLScheme string 'viewcaster://'" "$PLIST" 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Set :MWDAT:AppLinkURLScheme 'viewcaster://'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :MWDAT:MetaAppID string '0'" "$PLIST" 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Set :MWDAT:MetaAppID '0'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :MWDAT:DAMEnabled bool true" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :MWDAT:DAMEnabled true" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :MWDAT:TeamID string '$TEAM'" "$PLIST" 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Set :MWDAT:TeamID '$TEAM'" "$PLIST"
           echo "MWDAT in built app:"
@@ -78,6 +80,6 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
         with:
           tag_name: ios-${{ github.run_number }}
-          name: ${{ github.event.inputs.team_id != '' && format('View Caster Relay iOS {0} (Team {1})', github.run_number, github.event.inputs.team_id) || format('View Caster Relay iOS {0}', github.run_number) }}
+          name: ${{ format('View Caster Relay iOS {0} (Team {1})', github.run_number, github.event.inputs.team_id || 'JM52FT93Z2') }}
           files: ios/build/ViewCasterRelay-unsigned.ipa
           generate_release_notes: true

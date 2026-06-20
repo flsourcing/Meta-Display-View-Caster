@@ -12,6 +12,7 @@ final class WearablesManager: ObservableObject {
     @Published private(set) var isStreaming = false
     @Published private(set) var canRequestCamera = false
     @Published private(set) var metaSetupStarted = false
+    @Published private(set) var registrationStateName = "available"
 
     var onVideoFrame: ((VideoFrame) -> Void)?
 
@@ -20,6 +21,15 @@ final class WearablesManager: ObservableObject {
     private var glassesStream: MWDATCamera.Stream?
     private var frameListener: Any?
     private var observeTasks: [Task<Void, Never>] = []
+
+    private static let metaSetupKey = "metaSetupStarted"
+
+    init() {
+        metaSetupStarted = UserDefaults.standard.bool(forKey: Self.metaSetupKey)
+        if metaSetupStarted {
+            unlockCameraStepIfNeeded()
+        }
+    }
 
     func configure() {
         startObservers()
@@ -40,6 +50,7 @@ final class WearablesManager: ObservableObject {
     }
 
     private func applyRegistrationState(_ state: RegistrationState) {
+        registrationStateName = String(describing: state)
         switch state {
         case .registered:
             isRegistered = true
@@ -47,22 +58,32 @@ final class WearablesManager: ObservableObject {
             registrationLabel = "Meta AI connected"
         case .registering:
             isRegistered = false
-            registrationLabel = "Finish in Meta AI — tap Open to return, or use app switcher"
-            if !canRequestCamera {
+            registrationLabel = "Finish in Meta AI — tap Open to return, or switch back here"
+            if metaSetupStarted {
+                unlockCameraStepIfNeeded()
+            } else if !canRequestCamera {
                 cameraLabel = "Connect Meta AI first"
             }
         case .available:
             isRegistered = false
-            if !metaSetupStarted {
+            if metaSetupStarted {
+                unlockCameraStepIfNeeded()
+                registrationLabel = "Returned from Meta AI — tap Allow glasses camera"
+            } else {
                 canRequestCamera = false
                 registrationLabel = "Tap Connect Meta AI"
                 cameraLabel = "Connect Meta AI first"
             }
         case .unavailable:
             isRegistered = false
-            canRequestCamera = false
-            registrationLabel = "Registration unavailable — enable Developer Mode in Meta AI"
-            cameraLabel = "Connect Meta AI first"
+            if metaSetupStarted {
+                unlockCameraStepIfNeeded()
+                registrationLabel = "Meta state unavailable — try Allow glasses camera anyway"
+            } else {
+                canRequestCamera = false
+                registrationLabel = "Registration unavailable — enable Developer Mode in Meta AI"
+                cameraLabel = "Connect Meta AI first"
+            }
         @unknown default:
             isRegistered = false
             registrationLabel = "Unknown registration state"
@@ -76,22 +97,37 @@ final class WearablesManager: ObservableObject {
         }
     }
 
+    /// Sync unlock — safe to call on foreground before async SDK calls.
+    func unlockCameraStepIfNeeded() {
+        guard metaSetupStarted, !cameraGranted else { return }
+        canRequestCamera = true
+        cameraLabel = "Tap Allow glasses camera"
+    }
+
     func connectMetaAI() {
         guard !isRegistered else {
             registrationLabel = "Already connected to Meta AI"
             enableCameraStep()
             return
         }
-        metaSetupStarted = true
+        markMetaSetupStarted()
         Task { @MainActor in
             do {
                 registrationLabel = "Opening Meta AI…"
                 try await sdk.startRegistration()
                 registrationLabel = "Verify in Meta AI, then return here"
+                unlockCameraStepIfNeeded()
             } catch {
                 registrationLabel = "Registration failed: \(error.localizedDescription)"
+                unlockCameraStepIfNeeded()
             }
         }
+    }
+
+    func markMetaSetupStarted() {
+        metaSetupStarted = true
+        UserDefaults.standard.set(true, forKey: Self.metaSetupKey)
+        unlockCameraStepIfNeeded()
     }
 
     func handleCallback(_ url: URL) async {
@@ -104,29 +140,17 @@ final class WearablesManager: ObservableObject {
                 registrationLabel = "Meta AI connected"
                 await syncCameraPermissionStatus()
             } else {
-                registrationLabel = "Meta AI URL not recognized — try Allow glasses camera"
-                enableCameraStepAfterReturn()
+                registrationLabel = "Meta callback not recognized — tap Allow glasses camera"
+                unlockCameraStepIfNeeded()
             }
         } catch {
-            registrationLabel = "Meta AI callback failed: \(error.localizedDescription)"
-            enableCameraStepAfterReturn()
-        }
-    }
-
-    /// User returned from Meta AI (app switcher or Open). Enable step 2 — Meta may already be linked.
-    func enableCameraStepAfterReturn() {
-        guard metaSetupStarted, !cameraGranted else { return }
-        canRequestCamera = true
-        cameraLabel = "Tap Allow glasses camera"
-        if !isRegistered {
-            registrationLabel = "Returned from Meta AI — tap Allow glasses camera next"
+            registrationLabel = "Meta callback error: \(error.localizedDescription)"
+            unlockCameraStepIfNeeded()
         }
     }
 
     func refreshAfterForeground() async {
-        if metaSetupStarted && !isRegistered {
-            enableCameraStepAfterReturn()
-        }
+        unlockCameraStepIfNeeded()
         await syncCameraPermissionStatus()
         if isRegistered {
             enableCameraStep()
@@ -144,10 +168,11 @@ final class WearablesManager: ObservableObject {
     }
 
     func requestGlassesCamera() async {
-        if !canRequestCamera && !metaSetupStarted {
+        if !metaSetupStarted && !isRegistered {
             cameraLabel = "Connect Meta AI first (step 1)"
             return
         }
+        unlockCameraStepIfNeeded()
         cameraLabel = "Opening Meta AI for camera permission…"
         do {
             let status = try await sdk.requestPermission(.camera)

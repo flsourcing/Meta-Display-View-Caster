@@ -30,6 +30,7 @@ targets:
         MWDAT:
           AppLinkURLScheme: viewcaster://
           MetaAppID: "0"
+          DAMEnabled: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mdvc.viewcasterrelay

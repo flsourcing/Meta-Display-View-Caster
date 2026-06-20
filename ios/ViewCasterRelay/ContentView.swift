@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine
 
 @MainActor
 final class RelayViewModel: ObservableObject {
@@ -14,6 +15,7 @@ final class RelayViewModel: ObservableObject {
     @Published var metaBlocked = SigningInfo.needsTeamIDPatch
 
     private lazy var webrtc = WebRTCManager()
+    private var subs = Set<AnyCancellable>()
 
     init() {
         let saved = UserDefaults.standard.string(forKey: "signalingServerURL") ?? Self.defaultServer
@@ -22,6 +24,9 @@ final class RelayViewModel: ObservableObject {
             ?? URL(string: Self.defaultServer)!
         signaling = SignalingClient(serverURL: url)
         wireCallbacks()
+        wearables.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &subs)
     }
 
     func wireCallbacks() {
@@ -115,10 +120,17 @@ final class RelayViewModel: ObservableObject {
 
     func onReturnFromBackground() {
         refreshMetaInstallState()
+        wearables.unlockCameraStepIfNeeded()
         Task { await wearables.refreshAfterForeground() }
         if !signaling.connected {
             start()
         }
+    }
+
+    func finishedMetaAISetup() {
+        wearables.markMetaSetupStarted()
+        Task { await wearables.refreshAfterForeground() }
+        metaHint = "Step 2 enabled. Tap Allow glasses camera."
     }
 
     private func beginGlassesCast() async {
@@ -214,17 +226,18 @@ struct ContentView: View {
                             .multilineTextAlignment(.center)
 
                         if model.wearables.metaSetupStarted && !model.wearables.isRegistered {
-                            Text("After verifying in Meta AI, switch back here — step 2 should unlock automatically.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
+                            Button("I verified in Meta AI") {
+                                model.finishedMetaAISetup()
+                            }
+                            .font(.footnote)
+                            .buttonStyle(.bordered)
                         }
 
                         Button("2. Allow glasses camera") {
                             model.allowGlassesCamera()
                         }
                         .buttonStyle(.bordered)
-                        .disabled(!model.wearables.canRequestCamera)
+                        .disabled(model.metaBlocked || !model.wearables.metaSetupStarted && !model.wearables.isRegistered)
 
                         Text(model.wearables.cameraLabel)
                             .font(.footnote)

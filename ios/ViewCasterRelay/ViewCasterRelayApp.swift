@@ -12,20 +12,19 @@ struct ViewCasterRelayApp: App {
         } catch {
             NSLog("ViewCaster: Wearables.configure failed: \(error.localizedDescription)")
         }
-        _model = StateObject(wrappedValue: RelayViewModel())
+        let vm = RelayViewModel()
+        _model = StateObject(wrappedValue: vm)
+        MetaAppDelegate.install { url in
+            Task { @MainActor in
+                await vm.handleMetaCallback(url)
+            }
+        }
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(model)
-                .onAppear {
-                    MetaAppDelegate.onOpenURL = { url in
-                        Task { @MainActor in
-                            await model.handleMetaCallback(url)
-                        }
-                    }
-                }
                 .onOpenURL { url in
                     Task { await model.handleMetaCallback(url) }
                 }

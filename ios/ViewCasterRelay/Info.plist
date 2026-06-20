@@ -25,6 +25,8 @@
 		<string>viewcaster://</string>
 		<key>MetaAppID</key>
 		<string>0</string>
+		<key>DAMEnabled</key>
+		<true/>
 	</dict>
 	<key>UISupportedExternalAccessoryProtocols</key>
 	<array>
