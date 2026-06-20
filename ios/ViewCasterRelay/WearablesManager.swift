@@ -281,8 +281,10 @@ final class WearablesManager: ObservableObject {
             throw WearablesStreamError.notRegistered
         }
 
-        let permissionOK = cameraGranted || cameraPermissionConfirmed
-            || (try? await sdk.checkPermissionStatus(.camera)) == .granted
+        var permissionOK = cameraGranted || cameraPermissionConfirmed
+        if !permissionOK, let sdkStatus = try? await sdk.checkPermissionStatus(.camera), sdkStatus == .granted {
+            permissionOK = true
+        }
         if permissionOK {
             confirmCameraPermission()
         } else {
@@ -318,7 +320,7 @@ final class WearablesManager: ObservableObject {
         }
 
         await stream.start()
-        try await waitForStreamActive(stream, status: status)
+        status("Camera stream started")
 
         isStreaming = true
         lastMetaSyncNote = "Glasses stream active"
@@ -338,36 +340,6 @@ final class WearablesManager: ObservableObject {
             }
             group.addTask {
                 try await Task.sleep(nanoseconds: 45_000_000_000)
-                throw WearablesStreamError.deviceTimeout
-            }
-            defer { group.cancelAll() }
-            _ = try await group.next()
-        }
-    }
-
-    private func waitForStreamActive(
-        _ stream: MWDATCamera.Stream,
-        status: @escaping (String) -> Void
-    ) async throws {
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask { @MainActor in
-                try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-                    var finished = false
-                    _ = stream.statePublisher.listen { streamState in
-                        Task { @MainActor in
-                            NSLog("ViewCaster: stream state \(streamState)")
-                            status("Camera: \(streamState)…")
-                            guard !finished else { return }
-                            if streamState == .streaming {
-                                finished = true
-                                cont.resume()
-                            }
-                        }
-                    }
-                }
-            }
-            group.addTask {
-                try await Task.sleep(nanoseconds: 30_000_000_000)
                 throw WearablesStreamError.deviceTimeout
             }
             defer { group.cancelAll() }
