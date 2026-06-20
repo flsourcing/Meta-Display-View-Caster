@@ -1,14 +1,16 @@
 import Foundation
 
 enum SigningInfo {
+    static var bundleIdentifier: String {
+        Bundle.main.bundleIdentifier ?? "unknown"
+    }
+
     /// Team ID from the sideload signature (embedded.mobileprovision).
     static var embeddedTeamIdentifier: String? {
         guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
               let data = try? Data(contentsOf: url) else { return nil }
 
-        // Provisioning profile wraps XML plist in binary CMS — scan as lossy UTF-8.
         let text = String(decoding: data, as: UTF8.self)
-
         let patterns = [
             "team-identifier</key>\\s*<array>\\s*<string>([A-Z0-9]{10})</string>",
             "ApplicationIdentifierPrefix</key>\\s*<array>\\s*<string>([A-Z0-9]{10})</string>",
@@ -25,25 +27,51 @@ enum SigningInfo {
         return nil
     }
 
-    /// Team ID baked into Info.plist for Meta DAT.
     static var configuredMWTeamID: String? {
-        if let mw = Bundle.main.object(forInfoDictionaryKey: "MWDAT") as? [String: Any],
-           let team = mw["TeamID"] as? String,
-           !team.isEmpty {
-            return team
+        mwDict?["TeamID"] as? String
+    }
+
+    static var configuredMetaAppID: String? {
+        mwDict?["MetaAppID"] as? String
+    }
+
+    static var configuredURLScheme: String? {
+        mwDict?["AppLinkURLScheme"] as? String
+    }
+
+    private static var mwDict: [String: Any]? {
+        if let mw = Bundle.main.object(forInfoDictionaryKey: "MWDAT") as? [String: Any] {
+            return mw
         }
         guard let url = Bundle.main.url(forResource: "Info", withExtension: "plist"),
               let data = try? Data(contentsOf: url),
-              let pl = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              let mw = pl["MWDAT"] as? [String: Any],
-              let team = mw["TeamID"] as? String,
-              !team.isEmpty else { return nil }
-        return team
+              let pl = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
+            return nil
+        }
+        return pl["MWDAT"] as? [String: Any]
     }
 
-    /// True when Meta AI cannot link — no Team ID in this install.
+    /// Why Meta AI opens but never shows a connect prompt.
+    static var metaConnectionIssue: String? {
+        guard let configured = configuredMWTeamID, !configured.isEmpty else {
+            return "Missing MWDAT TeamID in this install. Reinstall a GitHub release tagged with your Team ID."
+        }
+        guard let signed = embeddedTeamIdentifier else {
+            return nil
+        }
+        if configured.uppercased() != signed.uppercased() {
+            return """
+            Team ID mismatch — Meta AI won't prompt.
+            IPA Team ID: \(configured)
+            Sideload Team ID: \(signed)
+            Rebuild the IPA with Team ID \(signed) (GitHub Actions → Build iOS IPA).
+            """
+        }
+        return nil
+    }
+
     static var needsTeamIDPatch: Bool {
-        guard let configured = configuredMWTeamID else { return true }
+        guard let configured = configuredMWTeamID, !configured.isEmpty else { return true }
         guard let signed = embeddedTeamIdentifier else { return false }
         return configured.uppercased() != signed.uppercased()
     }
@@ -53,10 +81,17 @@ enum SigningInfo {
     }
 
     static var patchInstructions: String {
+        if let issue = metaConnectionIssue {
+            return issue
+        }
         let team = displayTeamID ?? "YOUR10CHARID"
         return """
         Reinstall an IPA built with Team ID \(team).
-        Download the release tagged for your Team ID from GitHub Releases.
+        Download the release tagged (Team \(team)) from GitHub Releases.
         """
+    }
+
+    static var developerModeHint: String {
+        "Meta AI → Settings → your glasses → Developer Mode ON (per glasses pair; re-enable after firmware updates)."
     }
 }

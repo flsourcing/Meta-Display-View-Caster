@@ -52,8 +52,6 @@ jobs:
             /usr/libexec/PlistBuddy -c "Set :MWDAT:AppLinkURLScheme 'viewcaster://'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :MWDAT:MetaAppID string '0'" "$PLIST" 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Set :MWDAT:MetaAppID '0'" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :MWDAT:DAMEnabled bool true" "$PLIST" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Set :MWDAT:DAMEnabled true" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :MWDAT:TeamID string '$TEAM'" "$PLIST" 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Set :MWDAT:TeamID '$TEAM'" "$PLIST"
           echo "MWDAT in built app:"

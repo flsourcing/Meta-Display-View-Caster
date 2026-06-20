@@ -115,13 +115,34 @@ final class WearablesManager: ObservableObject {
             do {
                 registrationLabel = "Opening Meta AI…"
                 try await sdk.startRegistration()
-                registrationLabel = "Verify in Meta AI, then return here"
+                registrationLabel = "Approve connection in Meta AI, then return here"
                 unlockCameraStepIfNeeded()
             } catch {
                 registrationLabel = "Registration failed: \(error.localizedDescription)"
                 unlockCameraStepIfNeeded()
             }
         }
+    }
+
+    func resetMetaConnection() {
+        Task { @MainActor in
+            do {
+                registrationLabel = "Opening Meta AI to disconnect…"
+                try await sdk.startUnregistration()
+            } catch {
+                registrationLabel = "Reset failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func clearLocalMetaState() {
+        metaSetupStarted = false
+        isRegistered = false
+        cameraGranted = false
+        canRequestCamera = false
+        UserDefaults.standard.removeObject(forKey: Self.metaSetupKey)
+        registrationLabel = "Tap Connect Meta AI"
+        cameraLabel = "Connect Meta AI first"
     }
 
     func markMetaSetupStarted() {

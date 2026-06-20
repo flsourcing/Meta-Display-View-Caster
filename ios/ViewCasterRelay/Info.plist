@@ -25,8 +25,8 @@
 		<string>viewcaster://</string>
 		<key>MetaAppID</key>
 		<string>0</string>
-		<key>DAMEnabled</key>
-		<true/>
+		<key>TeamID</key>
+		<string>JM52FT93Z2</string>
 	</dict>
 	<key>UISupportedExternalAccessoryProtocols</key>
 	<array>
@@ -34,8 +34,16 @@
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>
+		<string>bluetooth-central</string>
 		<string>bluetooth-peripheral</string>
 		<string>external-accessory</string>
+		<string>processing</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Find and connect to Meta glasses on your local network.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_bonjour._tcp</string>
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Connect to Meta Display glasses for live view streaming.</string>

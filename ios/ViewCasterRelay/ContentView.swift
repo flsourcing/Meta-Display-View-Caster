@@ -79,11 +79,26 @@ final class RelayViewModel: ObservableObject {
             metaHint = SigningInfo.patchInstructions
             return
         }
+        if let issue = SigningInfo.metaConnectionIssue {
+            metaHint = issue
+            return
+        }
         metaHint = """
-        Verify in Meta AI, then tap Open to return here (important).
-        Step 2 unlocks after you return — Allow glasses camera opens Meta AI again for camera access.
+        \(SigningInfo.developerModeHint)
+        In Meta AI you should see a prompt to connect View Caster Relay.
+        If Meta AI opens with no prompt, tap Reset Meta connection below and try again.
         """
         wearables.connectMetaAI()
+    }
+
+    func resetMetaConnection() {
+        wearables.resetMetaConnection()
+        metaHint = "Disconnect View Caster in Meta AI if listed, then tap Connect Meta AI again."
+    }
+
+    func clearLocalMetaState() {
+        wearables.clearLocalMetaState()
+        metaHint = "Local Meta steps reset. Tap Connect Meta AI."
     }
 
     func refreshMetaConnection() {
@@ -192,18 +207,19 @@ struct ContentView: View {
                             Text("Meta AI can't connect to this install")
                                 .font(.subheadline.bold())
                                 .foregroundStyle(.orange)
-                            Text("This IPA is missing your Team ID in MWDAT config. Install the GitHub release built for your Team ID.")
+                            Text(SigningInfo.patchInstructions)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                             if let configured = SigningInfo.configuredMWTeamID {
-                                Text("Built-in Team ID: \(configured)")
-                                    .font(.caption.monospaced())
-                            } else if !model.sideloadTeamId.isEmpty {
-                                Text("Sideload Team ID: \(model.sideloadTeamId)")
+                                Text("IPA Team ID: \(configured)")
                                     .font(.caption.monospaced())
                             }
-                            Button("Copy Team ID") {
+                            if let signed = SigningInfo.embeddedTeamIdentifier {
+                                Text("Sideload Team ID: \(signed)")
+                                    .font(.caption.monospaced())
+                            }
+                            Button("Copy Sideload Team ID") {
                                 model.copyTeamIdForPatch()
                             }
                             .buttonStyle(.bordered)
@@ -212,6 +228,24 @@ struct ContentView: View {
                         .background(Color(.secondarySystemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Meta setup")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        Text("Bundle: \(SigningInfo.bundleIdentifier)")
+                            .font(.caption.monospaced())
+                        Text("IPA Team: \(SigningInfo.configuredMWTeamID ?? "missing")")
+                            .font(.caption.monospaced())
+                        Text("Sideload Team: \(SigningInfo.embeddedTeamIdentifier ?? "unknown")")
+                            .font(.caption.monospaced())
+                        Text("Meta state: \(model.wearables.registrationStateName)")
+                            .font(.caption.monospaced())
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
 
                     Group {
                         Button("1. Connect Meta AI") {
@@ -248,6 +282,16 @@ struct ContentView: View {
                             model.connectMetaAIWebApp()
                         }
                         .buttonStyle(.bordered)
+
+                        Button("Reset Meta connection") {
+                            model.resetMetaConnection()
+                        }
+                        .font(.footnote)
+
+                        Button("Clear local Meta steps") {
+                            model.clearLocalMetaState()
+                        }
+                        .font(.footnote)
                     }
 
                     if !model.metaHint.isEmpty {
