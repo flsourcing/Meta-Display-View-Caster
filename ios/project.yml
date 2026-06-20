@@ -36,10 +36,7 @@ targets:
         PROVISIONING_PROFILE_SPECIFIER: ""
     dependencies:
       - package: WebRTC
-        embed: true
       - package: MWDAT
         product: MWDATCore
-        embed: true
       - package: MWDAT
         product: MWDATCamera
-        embed: true
