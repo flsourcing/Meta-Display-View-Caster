@@ -2,7 +2,7 @@ import AVFoundation
 import CoreMedia
 
 /// Rear phone camera fallback when Meta SDK registration is unavailable.
-final class PhoneCameraManager: NSObject {
+final class PhoneCameraManager: NSObject, @unchecked Sendable {
     var onSampleBuffer: ((CMSampleBuffer) -> Void)?
 
     private let session = AVCaptureSession()
