@@ -2,7 +2,6 @@ import AVFoundation
 import CoreMedia
 
 /// Rear phone camera fallback when Meta SDK registration is unavailable.
-@MainActor
 final class PhoneCameraManager: NSObject {
     var onSampleBuffer: ((CMSampleBuffer) -> Void)?
 
@@ -77,13 +76,11 @@ final class PhoneCameraManager: NSObject {
 }
 
 extension PhoneCameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
-    nonisolated func captureOutput(
+    func captureOutput(
         _ output: AVCaptureOutput,
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        Task { @MainActor in
-            self.onSampleBuffer?(sampleBuffer)
-        }
+        onSampleBuffer?(sampleBuffer)
     }
 }
