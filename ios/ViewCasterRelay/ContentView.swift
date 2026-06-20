@@ -75,17 +75,20 @@ final class RelayViewModel: ObservableObject {
             return
         }
         metaHint = """
-        Approve the prompt in Meta AI, then return here.
-        If no prompt: Meta AI → App connections → Developer mode apps → View Caster Relay.
-        Developer Mode: Meta AI → Settings → App Info → tap version 5×.
+        Verify in Meta AI, then tap Open to return here (important).
+        Step 2 unlocks after you return — Allow glasses camera opens Meta AI again for camera access.
         """
         wearables.connectMetaAI()
+    }
+
+    func refreshMetaConnection() {
+        Task { await wearables.refreshAfterForeground() }
     }
 
     func copyTeamIdForPatch() {
         let team = SigningInfo.displayTeamID ?? sideloadTeamId
         guard !team.isEmpty else {
-            metaHint = "Team ID not found — use JM52FT93Z2 or check Sideloadly install log."
+            metaHint = "Team ID not found — check Sideloadly install log or GitHub release for your build."
             return
         }
         UIPasteboard.general.string = team
@@ -112,6 +115,7 @@ final class RelayViewModel: ObservableObject {
 
     func onReturnFromBackground() {
         refreshMetaInstallState()
+        Task { await wearables.refreshAfterForeground() }
         if !signaling.connected {
             start()
         }
@@ -208,6 +212,14 @@ struct ContentView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
+
+                        if !model.wearables.isRegistered && !model.metaBlocked
+                            && model.wearables.registrationLabel.contains("Meta AI") {
+                            Button("Refresh after Meta AI") {
+                                model.refreshMetaConnection()
+                            }
+                            .font(.footnote)
+                        }
 
                         Button("2. Allow glasses camera") {
                             model.allowGlassesCamera()

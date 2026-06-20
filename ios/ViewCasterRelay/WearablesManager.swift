@@ -50,7 +50,7 @@ final class WearablesManager: ObservableObject {
         case .registering:
             isRegistered = false
             canRequestCamera = false
-            registrationLabel = "Waiting for approval in Meta AI…"
+            registrationLabel = "Finish verify in Meta AI, then tap Open to return here"
             cameraLabel = "Connect Meta AI first"
         case .available:
             isRegistered = false
@@ -86,6 +86,37 @@ final class WearablesManager: ObservableObject {
         }
     }
 
+    func handleCallback(_ url: URL) async {
+        do {
+            let handled = try await sdk.handleUrl(url)
+            if handled {
+                await refreshAfterForeground()
+            }
+        } catch {
+            registrationLabel = "Meta AI callback failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Called when returning from Meta AI (app switch or URL callback).
+    func refreshAfterForeground() async {
+        if let status = try? await sdk.checkPermissionStatus(.camera) {
+            if !isRegistered {
+                applyRegistrationState(.registered)
+            }
+            cameraGranted = (status == .granted)
+            cameraLabel = cameraGranted
+                ? "Glasses camera allowed"
+                : "Tap Allow glasses camera"
+            return
+        }
+
+        if isRegistered {
+            cameraLabel = cameraGranted
+                ? "Glasses camera allowed"
+                : "Tap Allow glasses camera"
+        }
+    }
+
     func requestGlassesCamera() async {
         guard isRegistered else {
             cameraLabel = "Connect Meta AI first (step 1)"
@@ -100,14 +131,6 @@ final class WearablesManager: ObservableObject {
                 : "Camera denied — allow in Meta AI app"
         } catch {
             cameraLabel = "Permission error: \(error.localizedDescription)"
-        }
-    }
-
-    func handleCallback(_ url: URL) async {
-        do {
-            _ = try await sdk.handleUrl(url)
-        } catch {
-            registrationLabel = "Meta AI callback failed: \(error.localizedDescription)"
         }
     }
 
