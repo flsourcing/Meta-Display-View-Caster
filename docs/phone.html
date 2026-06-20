@@ -6,101 +6,133 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="View Caster">
+  <meta name="description" content="Phone relay for Meta Display View Caster live streaming">
+  <meta name="mrbd-web-app-capable" content="yes">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>View Caster — Phone</title>
-  <link rel="stylesheet" href="css/style.css?v=21">
+  <link rel="stylesheet" href="css/style.css?v=22">
   <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230064e0' width='100' height='100' rx='20'/><text x='50' y='62' font-size='48' text-anchor='middle' fill='white' font-family='system-ui'>VC</text></svg>">
   <style>
-    .action-row {
-      display: flex;
-      flex-direction: column;
-      gap: 0.65rem;
-      margin: 1rem 0;
-    }
-    .action-row .btn { width: 100%; }
-    .perm-status {
-      font-size: 0.85rem;
-      color: var(--muted);
-      text-align: center;
-      min-height: 1.25rem;
-    }
-    .meta-panel {
-      margin-top: 1rem;
-      padding: 0.85rem;
-      border-radius: 8px;
+    .setup-step { text-align: center; }
+    .setup-step h2 { font-size: 1.15rem; margin-bottom: 0.5rem; }
+    .setup-step p { color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem; }
+    .setup-step .btn { width: 100%; margin-bottom: 0.65rem; }
+    .setup-step .btn.secondary {
       background: var(--surface);
-      border: 1px solid var(--border);
+      color: var(--text);
+      border: 2px solid var(--border);
+    }
+    .step-status {
       font-size: 0.85rem;
       color: var(--muted);
+      min-height: 1.25rem;
+      margin: 0.75rem 0;
     }
-    .meta-panel.hidden { display: none; }
-    .meta-panel code {
+    .setup-url {
       display: block;
       word-break: break-all;
       font-family: var(--mono);
-      font-size: 0.75rem;
-      margin: 0.5rem 0;
-      color: var(--text);
+      font-size: 0.72rem;
+      padding: 0.65rem;
+      margin: 0.75rem 0;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      text-align: left;
     }
-    .meta-panel ol { margin: 0.5rem 0 0 1.1rem; padding: 0; }
-    .meta-panel li { margin: 0.35rem 0; }
+    .setup-steps {
+      text-align: left;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin: 0.75rem 0 1rem;
+      padding-left: 1.1rem;
+    }
+    .setup-steps li { margin: 0.35rem 0; }
+    .ready-actions { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.75rem; }
+    .ready-actions .btn { width: 100%; }
+    .ready-actions .btn.linkish {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-size: 0.85rem;
+      padding: 0.35rem;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
       <h1>View Caster</h1>
-      <p>Phone relay — keep this app open while connecting.</p>
+      <p id="header-subtitle">Set up once, then stream from your glasses.</p>
     </header>
 
-    <div id="pairing-view" class="card">
-      <p class="code-timer">Pairing code</p>
-      <div id="pair-code" class="pair-code relay-code">······</div>
-      <p id="code-timer" class="code-timer">Starting relay…</p>
-      <p class="network-status"><span id="network-dot" class="network-dot offline"></span> <span id="network-label">Relay offline</span></p>
-      <p id="relay-hint" class="code-timer" style="font-size:0.75rem;"></p>
-
-      <div class="action-row">
-        <button id="perm-btn" type="button" class="btn btn-primary">Allow camera permissions</button>
-        <button id="meta-btn" type="button" class="btn btn-primary">Connect Meta AI glasses</button>
-        <button id="restart-btn" type="button" class="btn btn-primary" style="background:var(--surface);color:var(--text);border:2px solid var(--border);">Restart relay</button>
-      </div>
-      <p id="perm-status" class="perm-status"></p>
-
-      <div id="meta-panel" class="meta-panel hidden">
-        <strong>Add this URL in Meta AI → Web apps:</strong>
-        <code id="glasses-url"></code>
-        <ol>
-          <li>Open the <strong>Meta AI</strong> app on your phone</li>
-          <li>Go to <strong>Web apps</strong> (or glasses browser settings)</li>
-          <li>Add the URL above, then open it on your glasses</li>
-          <li>Enter the pairing code shown here and tap <strong>Go</strong></li>
+    <!-- First-run setup -->
+    <div id="setup-view" class="card">
+      <div id="step-meta" class="setup-step">
+        <h2>Step 1 — Connect Meta AI</h2>
+        <p>Add View Caster to your glasses through the Meta AI app.</p>
+        <button id="meta-connect-btn" type="button" class="btn btn-primary">Open Meta AI</button>
+        <p class="setup-url" id="glasses-url"></p>
+        <ol class="setup-steps">
+          <li>Meta AI opens on your phone</li>
+          <li>Go to <strong>Devices</strong> → your Display glasses</li>
+          <li><strong>App connections</strong> → <strong>Web apps</strong> → <strong>Add</strong></li>
+          <li>Name: <strong>View Caster</strong>, paste the URL above, tap <strong>Connect</strong></li>
+          <li>Open <strong>View Caster</strong> on your glasses (you’ll enter a code there later)</li>
         </ol>
+        <p id="meta-status" class="step-status">The glasses URL is copied when you tap Open Meta AI.</p>
+        <button id="meta-done-btn" type="button" class="btn btn-primary">I added View Caster on glasses</button>
       </div>
 
-      <p id="keep-open-hint" class="message" style="margin-top:0.75rem;"></p>
-      <p class="message" style="margin-top:0.5rem;"><a id="desktop-link" href="./">Open desktop viewer with code</a></p>
-      <p class="message" style="margin-top:0.5rem;"><a id="capture-link" href="capture.html">Open camera page (for streaming)</a></p>
-
-      <div id="status" class="status waiting" style="margin-top:1rem;">
-        <span class="status-dot"></span>
-        <span id="status-text">Starting…</span>
+      <div id="step-camera" class="setup-step hidden">
+        <h2>Step 2 — Camera for live view</h2>
+        <p>Live Stream uses your phone camera to cast to the desktop (glasses web apps can’t access the camera directly).</p>
+        <button id="camera-meta-btn" type="button" class="btn btn-primary secondary">Open Meta AI (glasses permissions)</button>
+        <button id="camera-connect-btn" type="button" class="btn btn-primary">Allow camera for live streaming</button>
+        <p id="camera-status" class="step-status">Allow camera so Live Stream can cast to your desktop.</p>
       </div>
     </div>
 
-    <div id="connected-view" class="card hidden">
-      <p id="connected-label" class="connected-label">Connected</p>
-      <p>Session code: <strong id="session-code"></strong></p>
-      <p id="stream-hint" class="message"></p>
+    <!-- Ready dashboard -->
+    <div id="ready-view" class="hidden">
+      <div id="pairing-view" class="card">
+        <p class="code-timer">Pairing code — enter on glasses &amp; desktop</p>
+        <div id="pair-code" class="pair-code relay-code">······</div>
+        <p id="code-timer" class="code-timer">Starting relay…</p>
+        <p class="network-status"><span id="network-dot" class="network-dot offline"></span> <span id="network-label">Relay offline</span></p>
+        <p id="relay-hint" class="code-timer" style="font-size:0.75rem;"></p>
+
+        <div id="status" class="status waiting" style="margin-top:1rem;">
+          <span class="status-dot"></span>
+          <span id="status-text">Starting…</span>
+        </div>
+
+        <p id="keep-open-hint" class="message" style="margin-top:0.75rem;"></p>
+        <p class="message" style="margin-top:0.5rem;font-size:0.85rem;">
+          <strong>On glasses:</strong> open View Caster → enter this code → tap <strong>Go</strong> → <strong>Live Stream</strong><br>
+          <strong>On desktop:</strong> <a id="desktop-link" href="./">open viewer</a> → same code → Connect
+        </p>
+
+        <div class="ready-actions">
+          <button id="restart-btn" type="button" class="btn btn-primary secondary">Restart relay</button>
+          <button id="reset-setup-btn" type="button" class="btn linkish">Run setup again</button>
+        </div>
+      </div>
+
+      <div id="connected-view" class="card hidden">
+        <p id="connected-label" class="connected-label">Connected</p>
+        <p>Session code: <strong id="session-code"></strong></p>
+        <p id="stream-hint" class="message"></p>
+      </div>
     </div>
   </div>
 
   <footer><a href="install.html">Install</a> · <a href="./">Desktop</a> · <a href="glasses.html">Glasses</a></footer>
 
-  <script src="js/peerjs.min.js?v=21"></script>
-  <script src="config.js?v=21"></script>
-  <script src="js/signaling.js?v=21"></script>
-  <script src="js/relay.js?v=21"></script>
-  <script src="js/phone-actions.js?v=21"></script>
+  <script src="js/peerjs.min.js?v=22"></script>
+  <script src="config.js?v=22"></script>
+  <script src="js/signaling.js?v=22"></script>
+  <script src="js/relay.js?v=22"></script>
+  <script src="js/phone-setup.js?v=22"></script>
 </body>
 </html>

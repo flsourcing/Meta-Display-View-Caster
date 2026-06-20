@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>View Caster — Glasses</title>
-  <link rel="stylesheet" href="css/style.css?v=19">
+  <link rel="stylesheet" href="css/style.css?v=22">
 </head>
 <body class="glasses">
   <div class="container">
@@ -39,11 +39,10 @@
     </div>
 
     <div id="connected-view" class="hidden">
-      <p id="connected-label" class="connected-label">Connected</p>
-      <p id="session-code" class="pair-code"></p>
-      <div class="status connected"><span class="status-dot"></span><span>Linked to desktop</span></div>
+      <p id="connected-label" class="connected-label">Ready</p>
       <p id="stream-hint" class="code-timer stream-hint">Select Live Stream, press Enter</p>
       <button id="stream-btn" class="btn btn-stream glasses-stream-btn" type="button" tabindex="0">Live Stream</button>
+      <p id="session-code" class="hidden" aria-hidden="true"></p>
     </div>
   </div>
 
@@ -51,8 +50,8 @@
 
   <script src="js/ws-signaling.js?v=19"></script>
   <script src="js/peerjs.min.js?v=19"></script>
-  <script src="config.js?v=21"></script>
-  <script src="js/signaling.js?v=19"></script>
-  <script src="js/glasses.js?v=19"></script>
+  <script src="config.js?v=22"></script>
+  <script src="js/signaling.js?v=22"></script>
+  <script src="js/glasses.js?v=22"></script>
 </body>
 </html>

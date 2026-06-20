@@ -28,6 +28,8 @@
   let glassesConn = null;
   let camConn = null;
   let desktopPeerId = null;
+  let localStream = null;
+  let activeCall = null;
   let streaming = false;
   let currentCode = '';
   let codeExpiresAt = 0;
@@ -160,7 +162,7 @@
     els.connectedView.classList.remove('hidden');
     els.connectedLabel.textContent = desktopConn?.open && glassesConn?.open ? 'All connected' : 'Partially connected';
     els.sessionCode.textContent = currentCode;
-    els.streamHint.innerHTML = `For video: open <a href="${captureUrl()}">capture.html</a> on this phone and allow camera. Then tap Live Stream on glasses.`;
+    els.streamHint.innerHTML = 'Tap <strong>Live Stream</strong> on glasses to cast to desktop.';
     updatePairingStatus();
   }
 
@@ -300,10 +302,50 @@
     }
   }
 
+  async function startInlineStream(targetId) {
+    if (!navigator.mediaDevices?.getUserMedia) return false;
+    stopInlineStream(false);
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      activeCall = peer.call(targetId, localStream);
+      activeCall.on('close', () => stopInlineStream(true));
+      return true;
+    } catch {
+      stopInlineStream(false);
+      return false;
+    }
+  }
+
+  function stopInlineStream(notify = true) {
+    activeCall?.close();
+    activeCall = null;
+    localStream?.getTracks().forEach((t) => t.stop());
+    localStream = null;
+    if (streaming && notify) {
+      streaming = false;
+      CasterSignaling.sendData(glassesConn, { type: 'stop-stream' });
+      CasterSignaling.sendData(desktopConn, { type: 'stop-stream' });
+      if (els.streamHint) {
+        els.streamHint.textContent = 'Tap Live Stream on glasses to cast again.';
+      }
+    }
+  }
+
   async function startCamBridge() {
     const targetId = desktopPeerId || CasterSignaling.desktopPeerIdForCode(currentCode);
     if (!targetId) {
       CasterSignaling.sendData(glassesConn, { type: 'stop-stream' });
+      return;
+    }
+
+    if (await startInlineStream(targetId)) {
+      streaming = true;
+      CasterSignaling.sendData(glassesConn, { type: 'stream-started' });
+      CasterSignaling.sendData(desktopConn, { type: 'stream-started' });
+      if (els.streamHint) els.streamHint.textContent = 'Live stream casting to desktop…';
       return;
     }
 
@@ -323,6 +365,7 @@
   }
 
   function stopCamBridge(notify = true) {
+    stopInlineStream(false);
     if (camConn?.open) CasterSignaling.sendData(camConn, { type: 'stop-stream' });
     camConn?.close();
     camConn = null;
@@ -332,9 +375,24 @@
         CasterSignaling.sendData(glassesConn, { type: 'stop-stream' });
         CasterSignaling.sendData(desktopConn, { type: 'stop-stream' });
       }
-      els.streamHint.innerHTML = `For video: open <a href="${captureUrl()}">capture.html</a> on this phone and allow camera.`;
+      if (els.streamHint) {
+        els.streamHint.textContent = 'Tap Live Stream on glasses to cast again.';
+      }
     }
   }
+
+  function startRelay() {
+    if (registering || peer?.open) return;
+    register(CasterSignaling.generateCode());
+  }
+
+  function restartRelay() {
+    stopInlineStream(false);
+    stopCamBridge(false);
+    register(CasterSignaling.generateCode());
+  }
+
+  window.CasterRelay = { start: startRelay, restart: restartRelay };
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
@@ -346,7 +404,7 @@
   if (!timerInterval) timerInterval = setInterval(updateTimer, 1000);
 
   if (els.keepOpenHint) {
-    els.keepOpenHint.textContent = 'Wait for the green Relay network dot, then connect desktop and glasses. Keep this page open until glasses show Connected.';
+    els.keepOpenHint.textContent = 'Keep this app open. Enter the code on glasses, then tap Live Stream to cast to desktop.';
   }
 
   setInterval(() => {
@@ -359,5 +417,9 @@
     }
   }, 4000);
 
-  register(CasterSignaling.generateCode());
+  if (document.getElementById('ready-view') && document.getElementById('setup-view')) {
+    /* phone.html — phone-setup.js starts relay after onboarding */
+  } else {
+    register(CasterSignaling.generateCode());
+  }
 })();

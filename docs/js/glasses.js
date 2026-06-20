@@ -83,12 +83,10 @@
     connected = true;
     els.pairingView.classList.add('hidden');
     els.connectedView.classList.remove('hidden');
-    els.connectedLabel.textContent = 'Connected';
-    els.sessionCode.textContent = digits;
-    els.streamHint.textContent = useWS
-      ? 'Select Live Stream, press Enter. Camera is on your phone app.'
-      : 'Select Live Stream, press Enter. Camera is on your phone (capture.html).';
-    setStatus('connected', 'Linked');
+    els.connectedLabel.textContent = 'Ready';
+    if (els.sessionCode) els.sessionCode.textContent = digits;
+    els.streamHint.textContent = 'Press Enter on Live Stream to cast to desktop.';
+    setStatus('connected', 'Ready');
     els.streamBtn.focus();
   }
 
@@ -104,9 +102,7 @@
         streaming = false;
         els.streamBtn.textContent = 'Live Stream';
         els.streamBtn.classList.remove('active');
-        els.streamHint.textContent = useWS
-          ? 'Select Live Stream, press Enter. Camera is on your phone app.'
-          : 'Select Live Stream, press Enter. Camera is on your phone (capture.html).';
+        els.streamHint.textContent = 'Press Enter on Live Stream to cast again.';
       }
     };
 
