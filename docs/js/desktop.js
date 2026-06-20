@@ -1,5 +1,5 @@
 /**
- * Desktop viewer — enter pairing code, connect, receive live stream
+ * Desktop viewer — enter pairing code, connect, receive live stream from glasses
  */
 
 (function () {
@@ -11,21 +11,26 @@
     status: document.getElementById('status'),
     statusText: document.getElementById('status-text'),
     errorMsg: document.getElementById('error-msg'),
-    streamBtn: document.getElementById('stream-btn'),
     remoteVideo: document.getElementById('remote-video'),
     videoPlaceholder: document.getElementById('video-placeholder'),
+    statusViewer: document.getElementById('status-viewer'),
   };
 
   let peer = null;
   let dataConn = null;
   let activeCall = null;
-  let streaming = false;
   let connected = false;
   let connecting = false;
+  let streaming = false;
 
   function setStatus(kind, text) {
     els.status.className = `status ${kind}`;
     els.statusText.textContent = text;
+  }
+
+  function setViewerStatus(kind, text) {
+    els.statusViewer.className = `status ${kind}`;
+    els.statusViewer.querySelector('span:last-child').textContent = text;
   }
 
   function showError(msg) {
@@ -37,6 +42,7 @@
     els.connectSection.classList.add('hidden');
     els.viewerSection.classList.remove('hidden');
     setStatus('connected', 'Connected to glasses');
+    setViewerStatus('connected', 'Connected — tap Live Stream on glasses');
   }
 
   function cleanupCall() {
@@ -44,6 +50,11 @@
     activeCall = null;
     els.remoteVideo.srcObject = null;
     els.videoPlaceholder.classList.remove('hidden');
+    els.videoPlaceholder.textContent = 'Waiting for Live Stream from glasses…';
+    streaming = false;
+    if (connected) {
+      setViewerStatus('connected', 'Connected — tap Live Stream on glasses');
+    }
   }
 
   function resetToConnect() {
@@ -57,9 +68,6 @@
     peer = null;
     els.viewerSection.classList.add('hidden');
     els.connectSection.classList.remove('hidden');
-    els.streamBtn.textContent = 'Live Stream';
-    els.streamBtn.classList.remove('active');
-    els.streamBtn.disabled = false;
     els.connectBtn.disabled = false;
     setStatus('waiting', 'Enter code from glasses');
     showError('');
@@ -70,12 +78,12 @@
       activeCall = call;
       call.answer();
       call.on('stream', (stream) => {
+        streaming = true;
         els.remoteVideo.srcObject = stream;
         els.videoPlaceholder.classList.add('hidden');
+        setViewerStatus('connected', 'Live stream active');
       });
-      call.on('close', () => {
-        if (streaming) cleanupCall();
-      });
+      call.on('close', cleanupCall);
     });
 
     peer.on('disconnected', () => {
@@ -114,10 +122,9 @@
       await CasterSignaling.waitForConnection(dataConn);
 
       dataConn.on('data', (msg) => {
-        if (msg?.type === 'stop-stream') {
-          streaming = false;
-          els.streamBtn.textContent = 'Live Stream';
-          els.streamBtn.classList.remove('active');
+        if (msg?.type === 'stream-started') {
+          setViewerStatus('connected', 'Receiving live stream…');
+        } else if (msg?.type === 'stop-stream') {
           cleanupCall();
         }
       });
@@ -146,23 +153,6 @@
     }
   }
 
-  function toggleStream() {
-    if (!connected || !dataConn?.open) return;
-
-    if (!streaming) {
-      streaming = true;
-      els.streamBtn.textContent = 'Stop Stream';
-      els.streamBtn.classList.add('active');
-      CasterSignaling.sendData(dataConn, { type: 'start-stream', peerId: peer.id });
-    } else {
-      streaming = false;
-      els.streamBtn.textContent = 'Live Stream';
-      els.streamBtn.classList.remove('active');
-      CasterSignaling.sendData(dataConn, { type: 'stop-stream' });
-      cleanupCall();
-    }
-  }
-
   els.connectBtn.addEventListener('click', connect);
   els.codeInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') connect();
@@ -170,7 +160,6 @@
   els.codeInput.addEventListener('input', () => {
     els.codeInput.value = els.codeInput.value.replace(/\D/g, '').slice(0, 6);
   });
-  els.streamBtn.addEventListener('click', toggleStream);
 
   setStatus('waiting', 'Enter code from glasses');
 })();

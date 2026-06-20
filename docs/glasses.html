@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <title>View Caster — Glasses</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👓</text></svg>">
-  <link rel="stylesheet" href="css/style.css?v=3">
+  <link rel="stylesheet" href="css/style.css?v=4">
 </head>
 <body class="glasses">
   <div class="container">
@@ -34,17 +34,21 @@
         <span>Linked to desktop</span>
       </div>
 
-      <p id="stream-hint" class="code-timer" style="margin-top: 2rem;">
-        Tap Live Stream on your desktop to begin.
+      <p id="stream-hint" class="code-timer stream-hint">
+        Cast your view to the desktop viewer.
       </p>
+
+      <button id="stream-btn" class="btn btn-stream glasses-stream-btn" type="button" tabindex="0">
+        Live Stream
+      </button>
     </div>
   </div>
 
   <footer>Meta Display View Caster</footer>
 
-  <script src="js/peerjs.min.js?v=3"></script>
-  <script src="config.js?v=3"></script>
-  <script src="js/signaling.js?v=3"></script>
-  <script src="js/glasses.js?v=3"></script>
+  <script src="js/peerjs.min.js?v=4"></script>
+  <script src="config.js?v=4"></script>
+  <script src="js/signaling.js?v=4"></script>
+  <script src="js/glasses.js?v=4"></script>
 </body>
 </html>

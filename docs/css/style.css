@@ -262,7 +262,27 @@ body.glasses .connected-label {
   font-size: 1.4rem;
   font-weight: 700;
   color: var(--success);
-  margin: 2rem 0;
+  margin: 2rem 0 1rem;
+}
+
+body.glasses .stream-hint {
+  margin: 1rem 0 1.5rem;
+}
+
+body.glasses .glasses-stream-btn {
+  position: fixed;
+  bottom: 2.5rem;
+  left: 1rem;
+  right: 1rem;
+  width: auto;
+  max-width: 560px;
+  margin: 0 auto;
+  z-index: 10;
+}
+
+body.glasses .glasses-stream-btn.active {
+  background: var(--error);
+  color: #fff;
 }
 
 body.glasses footer {

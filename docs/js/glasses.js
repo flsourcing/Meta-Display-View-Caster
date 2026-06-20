@@ -12,6 +12,7 @@
     statusText: document.getElementById('status-text'),
     connectedLabel: document.getElementById('connected-label'),
     streamHint: document.getElementById('stream-hint'),
+    streamBtn: document.getElementById('stream-btn'),
   };
 
   const ROTATION_MS = window.CASTER_CONFIG?.CODE_ROTATION_MS || 60_000;
@@ -21,7 +22,8 @@
   let localStream = null;
   let activeCall = null;
   let connected = false;
-  let currentCode = '';
+  let streaming = false;
+  let desktopPeerId = null;
   let codeExpiresAt = 0;
   let timerInterval = null;
   let rotationTimeout = null;
@@ -42,7 +44,6 @@
   }
 
   function showCode(code) {
-    currentCode = code;
     els.pairCode.textContent = code;
     codeExpiresAt = Date.now() + ROTATION_MS;
     updateTimer();
@@ -59,14 +60,20 @@
     els.connectedLabel.textContent = 'Connected';
     setStatus('connected', 'Linked to desktop');
     updateTimer();
+    els.streamBtn.focus();
   }
 
   function showPairing() {
     connected = false;
-    stopStream();
+    streaming = false;
+    desktopPeerId = null;
+    stopStream(false);
     dataConn = null;
     els.connectedView.classList.add('hidden');
     els.pairingView.classList.remove('hidden');
+    els.streamBtn.textContent = 'Live Stream';
+    els.streamBtn.classList.remove('active');
+    els.streamHint.textContent = 'Cast your view to the desktop viewer.';
     setStatus('waiting', 'Waiting for pairing');
     scheduleRotation();
   }
@@ -99,15 +106,14 @@
 
       peer.on('connection', (conn) => {
         dataConn = conn;
+
         conn.on('open', () => {
           showConnected();
         });
 
         conn.on('data', async (msg) => {
-          if (msg?.type === 'start-stream') {
-            await startStream(msg.peerId);
-          } else if (msg?.type === 'stop-stream') {
-            stopStream();
+          if (msg?.type === 'hello' && msg.peerId) {
+            desktopPeerId = msg.peerId;
           }
         });
 
@@ -117,9 +123,7 @@
       });
 
       peer.on('disconnected', () => {
-        if (!connected) {
-          setStatus('error', 'Reconnecting…');
-        }
+        if (!connected) setStatus('error', 'Reconnecting…');
       });
 
       peer.on('error', (err) => {
@@ -149,8 +153,13 @@
     }
   }
 
-  async function startStream(desktopPeerId) {
-    stopStream();
+  async function startStream() {
+    if (!desktopPeerId || !peer) {
+      els.streamHint.textContent = 'Desktop not ready yet. Reconnect from the viewer page.';
+      return;
+    }
+
+    stopStream(false);
 
     try {
       localStream = await navigator.mediaDevices.getUserMedia({
@@ -165,17 +174,47 @@
     }
 
     activeCall = peer.call(desktopPeerId, localStream);
-    activeCall.on('close', stopStream);
-    els.streamHint.textContent = 'Streaming live view…';
+    activeCall.on('close', () => {
+      if (streaming) toggleStream();
+    });
+
+    streaming = true;
+    els.streamBtn.textContent = 'Stop Stream';
+    els.streamBtn.classList.add('active');
+    els.streamHint.textContent = 'Casting to desktop viewer…';
+    CasterSignaling.sendData(dataConn, { type: 'stream-started' });
   }
 
-  function stopStream() {
+  function stopStream(notifyDesktop = true) {
     activeCall?.close();
     activeCall = null;
     localStream?.getTracks().forEach((t) => t.stop());
     localStream = null;
-    els.streamHint.textContent = 'Tap Live Stream on your desktop to begin.';
+
+    if (streaming) {
+      streaming = false;
+      els.streamBtn.textContent = 'Live Stream';
+      els.streamBtn.classList.remove('active');
+      els.streamHint.textContent = 'Cast your view to the desktop viewer.';
+      if (notifyDesktop) {
+        CasterSignaling.sendData(dataConn, { type: 'stop-stream' });
+      }
+    }
   }
+
+  function toggleStream() {
+    if (!connected) return;
+    if (streaming) {
+      stopStream(true);
+    } else {
+      startStream();
+    }
+  }
+
+  els.streamBtn.addEventListener('click', toggleStream);
+  els.streamBtn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') toggleStream();
+  });
 
   startPairingSession();
 })();
