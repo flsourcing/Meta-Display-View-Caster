@@ -44,10 +44,11 @@ final class WebRTCManager: NSObject {
         pc?.offer(for: offerConstraints) { [weak self] sdp, error in
             guard let self, let sdp, error == nil else { return }
             let offerSdp = sdp.sdp
+            let signaling = self.signaling
             self.pc?.setLocalDescription(sdp) { err in
                 guard err == nil else { return }
-                Task { @MainActor [weak self] in
-                    self?.signaling?.sendOffer(offerSdp)
+                Task { @MainActor in
+                    signaling?.sendOffer(offerSdp)
                 }
             }
         }
@@ -84,8 +85,9 @@ extension WebRTCManager: RTCPeerConnectionDelegate {
         let candidateSdp = candidate.sdp
         let mLineIndex = candidate.sdpMLineIndex
         let mid = candidate.sdpMid
-        Task { @MainActor [weak self] in
-            self?.signaling?.sendIceCandidate(
+        let signaling = self.signaling
+        Task { @MainActor in
+            signaling?.sendIceCandidate(
                 candidateSdp,
                 sdpMLineIndex: mLineIndex,
                 sdpMid: mid
