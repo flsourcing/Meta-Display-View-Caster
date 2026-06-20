@@ -22,6 +22,10 @@
   let connected = false;
   let connecting = false;
 
+  const params = new URLSearchParams(location.search);
+  const urlCode = params.get('code')?.replace(/\D/g, '').slice(0, 6);
+  if (urlCode && els.codeInput) els.codeInput.value = urlCode;
+
   function setStatus(kind, text) {
     els.status.className = `status ${kind}`;
     els.statusText.textContent = text;
@@ -41,7 +45,7 @@
     els.connectSection.classList.add('hidden');
     els.viewerSection.classList.remove('hidden');
     setViewerStatus('connected', 'Connected — tap Live Stream on glasses');
-    els.captureHint.innerHTML = `Phone camera: open <a href="capture.html?code=${code}">capture.html?code=${code}</a>`;
+    els.captureHint.innerHTML = `Phone camera: <a href="capture.html?code=${code}">capture.html?code=${code}</a>`;
   }
 
   function cleanupCall() {
@@ -91,33 +95,46 @@
     showError('');
     setStatus('waiting', 'Connecting…');
 
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const maxAttempts = 5;
+    let lastError;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
         peer?.destroy();
         peer = await CasterSignaling.createPeerWithRetry();
         setupPeer();
-        setStatus('waiting', attempt > 1 ? `Finding relay… (${attempt}/3)` : 'Finding relay…');
+        setStatus('waiting', `Finding relay… (${attempt}/${maxAttempts})`);
+
         dataConn = peer.connect(CasterSignaling.peerIdForCode(code), { reliable: true });
-        await CasterSignaling.waitForConnection(dataConn);
+        await CasterSignaling.waitForConnection(dataConn, 45000);
+
         dataConn.on('close', () => { if (connected) resetToConnect(); });
         CasterSignaling.sendData(dataConn, { type: 'hello', peerId: peer.id });
         connected = true;
         connecting = false;
         showViewer(code);
+        showError('');
         return;
       } catch (err) {
-        console.warn(`attempt ${attempt}`, err);
-        if (attempt < 3) await new Promise((r) => setTimeout(r, 2000));
-        else {
-          connecting = false;
-          showError(err.message);
-          els.connectBtn.disabled = false;
-          setStatus('waiting', 'Enter code from phone relay');
-          peer?.destroy();
-          peer = null;
+        lastError = err;
+        console.warn(`connect attempt ${attempt}`, err);
+        if (attempt < maxAttempts) {
+          setStatus('waiting', `Retrying… keep relay.html open on phone (${attempt + 1}/${maxAttempts})`);
+          await new Promise((r) => setTimeout(r, 3000));
         }
       }
     }
+
+    connecting = false;
+    showError(
+      lastError?.message
+        ? `${lastError.message} Keep relay.html open on your phone (in foreground) and try again.`
+        : 'Connection failed. Keep relay.html open on your phone and try again.',
+    );
+    els.connectBtn.disabled = false;
+    setStatus('waiting', 'Enter code from phone relay');
+    peer?.destroy();
+    peer = null;
   }
 
   els.connectBtn.addEventListener('click', connect);
@@ -127,4 +144,6 @@
   });
 
   setStatus('waiting', 'Enter code from phone relay');
+
+  if (urlCode?.length === 6) connect();
 })();

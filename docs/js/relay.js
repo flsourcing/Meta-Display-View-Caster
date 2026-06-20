@@ -1,6 +1,5 @@
 /**
- * Phone relay — hosts the pairing session (use when Meta glasses can't register).
- * Open this on your phone FIRST, then enter the code on desktop.
+ * Phone relay — hosts pairing session. Keep this page open in foreground.
  */
 (function () {
   const els = {
@@ -14,6 +13,8 @@
     sessionCode: document.getElementById('session-code'),
     streamHint: document.getElementById('stream-hint'),
     streamBtn: document.getElementById('stream-btn'),
+    keepOpenHint: document.getElementById('keep-open-hint'),
+    desktopLink: document.getElementById('desktop-link'),
   };
 
   const ROTATION_MS = window.CASTER_CONFIG?.CODE_ROTATION_MS || 300_000;
@@ -21,8 +22,6 @@
   let peer = null;
   let dataConn = null;
   let camConn = null;
-  let localStream = null;
-  let activeCall = null;
   let connected = false;
   let streaming = false;
   let desktopPeerId = null;
@@ -30,16 +29,29 @@
   let codeExpiresAt = 0;
   let timerInterval = null;
   let rotationTimeout = null;
-  let busy = false;
+  let registering = false;
+  let wakeLock = null;
 
   function setStatus(kind, text) {
     els.status.className = `status ${kind}`;
     els.statusText.textContent = text;
   }
 
+  async function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLock = await navigator.wakeLock.request('screen');
+      }
+    } catch {
+      /* optional */
+    }
+  }
+
   function updateTimer() {
     const left = Math.max(0, Math.ceil((codeExpiresAt - Date.now()) / 1000));
-    els.codeTimer.textContent = connected ? 'Session active' : left > 0 ? `Code expires in ${left}s` : 'New code…';
+    els.codeTimer.textContent = connected
+      ? 'Session active — keep this page open'
+      : left > 0 ? `Code expires in ${left}s` : 'Updating code…';
   }
 
   function showCode(code) {
@@ -48,6 +60,12 @@
     codeExpiresAt = Date.now() + ROTATION_MS;
     updateTimer();
     if (!timerInterval) timerInterval = setInterval(updateTimer, 1000);
+
+    const base = location.href.replace(/[^/]*$/, '');
+    if (els.desktopLink) {
+      els.desktopLink.href = `${base}?code=${code}`;
+      els.desktopLink.textContent = 'Open desktop viewer with code';
+    }
   }
 
   function captureUrl() {
@@ -65,7 +83,7 @@
     setStatus('connected', 'Linked to desktop');
   }
 
-  function attachListeners() {
+  function setupPeerHandlers() {
     peer.on('connection', (conn) => {
       dataConn = conn;
       conn.on('open', showConnected);
@@ -74,39 +92,71 @@
         if (msg?.type === 'start-stream') startStream();
         if (msg?.type === 'stop-stream') stopStream();
       });
-      conn.on('close', () => { if (connected) resetSession(); });
+      conn.on('close', () => {
+        if (connected) resetAfterDisconnect();
+      });
     });
 
     peer.on('disconnected', () => {
-      if (!connected && currentCode) register(currentCode, true);
+      if (!connected && currentCode) {
+        setStatus('error', 'Reconnecting…');
+        try {
+          peer.reconnect();
+        } catch {
+          register(currentCode, true);
+        }
+      }
+    });
+
+    peer.on('close', () => {
+      if (!connected && currentCode && !registering) {
+        register(currentCode, true);
+      }
+    });
+
+    peer.on('error', (err) => {
+      console.error('[caster] relay error:', err);
+      if (err.type === 'unavailable-id' && !connected) {
+        register(CasterSignaling.generateCode());
+      } else if (!connected && currentCode) {
+        setTimeout(() => register(currentCode, true), 1500);
+      }
     });
   }
 
   async function register(code, keepVisible = false) {
-    if (connected || busy) return;
-    busy = true;
-    peer?.destroy();
+    if (connected || registering) return;
+    registering = true;
+
     if (!keepVisible) {
       els.pairCode.textContent = '······';
       els.codeTimer.textContent = 'Connecting…';
     }
+
+    peer?.destroy();
+    peer = null;
+
     try {
-      peer = await CasterSignaling.createPeerWithRetry(CasterSignaling.peerIdForCode(code));
-      attachListeners();
+      await requestWakeLock();
+      peer = CasterSignaling.createPeer(CasterSignaling.peerIdForCode(code));
+      setupPeerHandlers();
+      await CasterSignaling.waitForPeerOpen(peer, 30000);
       showCode(code);
       setStatus('waiting', 'Ready — enter this code on desktop');
       clearTimeout(rotationTimeout);
-      rotationTimeout = setTimeout(() => { if (!connected) register(CasterSignaling.generateCode()); }, ROTATION_MS);
+      rotationTimeout = setTimeout(() => {
+        if (!connected) register(CasterSignaling.generateCode());
+      }, ROTATION_MS);
     } catch (err) {
-      console.error(err);
+      console.error('[caster] register failed:', err);
       setStatus('error', 'Retrying…');
       setTimeout(() => register(code, keepVisible), 2000);
     } finally {
-      busy = false;
+      registering = false;
     }
   }
 
-  function resetSession() {
+  function resetAfterDisconnect() {
     connected = false;
     streaming = false;
     desktopPeerId = null;
@@ -116,7 +166,7 @@
     els.pairingView.classList.remove('hidden');
     els.streamBtn.textContent = 'Live Stream';
     els.streamBtn.classList.remove('active');
-    register(currentCode || CasterSignaling.generateCode(), true);
+    register(currentCode, true);
   }
 
   async function startStream() {
@@ -126,7 +176,7 @@
     camConn?.close();
     camConn = peer.connect(CasterSignaling.camPeerIdForCode(currentCode), { reliable: true });
     try {
-      await CasterSignaling.waitForConnection(camConn, 8000);
+      await CasterSignaling.waitForConnection(camConn, 10000);
       CasterSignaling.sendData(camConn, { type: 'start-stream', desktopPeerId });
       streaming = true;
       els.streamBtn.textContent = 'Stop Stream';
@@ -138,22 +188,32 @@
   }
 
   function stopStream(notify = true) {
-    activeCall?.close();
-    activeCall = null;
-    localStream?.getTracks().forEach((t) => t.stop());
-    localStream = null;
     camConn?.close();
     camConn = null;
     if (streaming) {
       streaming = false;
       els.streamBtn.textContent = 'Live Stream';
       els.streamBtn.classList.remove('active');
-      if (notify) CasterSignaling.sendData(camConn, { type: 'stop-stream' });
-      CasterSignaling.sendData(dataConn, { type: 'stop-stream' });
+      if (notify) {
+        CasterSignaling.sendData(dataConn, { type: 'stop-stream' });
+      }
     }
   }
 
-  els.streamBtn?.addEventListener('click', () => streaming ? stopStream() : startStream());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && peer && !peer.open && currentCode && !connected) {
+      register(currentCode, true);
+    }
+    if (document.visibilityState === 'visible') requestWakeLock();
+  });
+
+  setInterval(() => {
+    if (peer && !peer.open && !peer.destroyed && currentCode && !connected && !registering) {
+      register(currentCode, true);
+    }
+  }, 8000);
+
+  els.streamBtn?.addEventListener('click', () => (streaming ? stopStream() : startStream()));
 
   register(CasterSignaling.generateCode());
 })();

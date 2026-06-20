@@ -5,20 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>View Caster — Phone Relay</title>
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=9">
 </head>
 <body>
   <div class="container">
     <header>
       <h1>Phone Relay</h1>
-      <p>Start here on your phone. Enter this code on desktop.</p>
+      <p>Start here on your phone. <strong>Keep this page open</strong> while connecting desktop.</p>
     </header>
 
     <div id="pairing-view" class="card">
       <p class="code-timer">Your pairing code</p>
       <div id="pair-code" class="pair-code" style="font-size:2.5rem;font-family:var(--mono);letter-spacing:0.15em;text-align:center;padding:1rem 0;">······</div>
       <p id="code-timer" class="code-timer">Connecting…</p>
-      <div id="status" class="status waiting">
+      <p id="keep-open-hint" class="message error" style="margin-top:0.75rem;">Do not switch apps — relay must stay in foreground.</p>
+      <p class="message" style="margin-top:0.5rem;"><a id="desktop-link" href="./">Open desktop viewer with code</a></p>
+      <div id="status" class="status waiting" style="margin-top:1rem;">
         <span class="status-dot"></span>
         <span id="status-text">Starting…</span>
       </div>
@@ -34,9 +36,9 @@
 
   <footer><a href="./">Desktop viewer</a> · <a href="glasses.html">Glasses</a></footer>
 
-  <script src="js/peerjs.min.js?v=8"></script>
-  <script src="config.js?v=8"></script>
-  <script src="js/signaling.js?v=8"></script>
-  <script src="js/relay.js?v=8"></script>
+  <script src="js/peerjs.min.js?v=9"></script>
+  <script src="config.js?v=9"></script>
+  <script src="js/signaling.js?v=9"></script>
+  <script src="js/relay.js?v=9"></script>
 </body>
 </html>

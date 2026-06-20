@@ -56,7 +56,7 @@ function waitForConnection(conn, ms = 30000) {
     conn.once('open', () => res(conn));
     conn.once('error', rej);
     conn.once('close', () => rej(new Error('Connection closed.')));
-  }), ms, 'Could not find that code. Open relay.html on your phone, copy the code shown, and try again right away.');
+  }), ms, 'Could not find that code. Keep relay.html open on your phone (do not switch apps), then try Connect again.');
 }
 
 function createPeer(id) {
