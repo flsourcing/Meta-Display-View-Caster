@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meta Display View Caster</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👓</text></svg>">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Meta Display View Caster</h1>
+      <p>Enter the code from your glasses to connect and view the live stream</p>
+    </header>
+
+    <section id="connect-section">
+      <div class="card">
+        <label for="code-input">Pairing code</label>
+        <input
+          id="code-input"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          maxlength="6"
+          placeholder="000000"
+          aria-label="6-digit pairing code from glasses"
+        >
+        <button id="connect-btn" class="btn btn-primary" type="button">Connect</button>
+        <p id="error-msg" class="message" role="alert"></p>
+      </div>
+
+      <div class="card" style="margin-top: 1rem;">
+        <div id="status" class="status waiting">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="status-text">Enter code from glasses</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="viewer-section" class="hidden">
+      <div class="card">
+        <div id="status-viewer" class="status connected">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span>Connected to glasses</span>
+        </div>
+
+        <div class="video-wrap">
+          <video id="remote-video" autoplay playsinline muted aria-label="Live stream from glasses"></video>
+          <div id="video-placeholder" class="video-placeholder">
+            Press Live Stream to start casting
+          </div>
+        </div>
+
+        <button id="stream-btn" class="btn btn-stream" type="button" style="margin-top: 1rem;">
+          Live Stream
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    Open <a href="glasses.html">glasses.html</a> on your Meta Display glasses to get a pairing code.
+  </footer>
+
+  <script src="config.js"></script>
+  <script src="js/signaling.js"></script>
+  <script src="js/desktop.js"></script>
+</body>
+</html>

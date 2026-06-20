@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=600, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>View Caster — Glasses</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👓</text></svg>">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="glasses">
+  <div class="container">
+    <header>
+      <h1>View Caster</h1>
+    </header>
+
+    <div id="pairing-view">
+      <p class="code-timer" style="margin-bottom: 0.5rem;">Your pairing code</p>
+      <div id="pair-code" class="pair-code" aria-live="polite">------</div>
+      <p id="code-timer" class="code-timer">Connecting…</p>
+
+      <div id="status" class="status waiting">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="status-text">Waiting for pairing</span>
+      </div>
+    </div>
+
+    <div id="connected-view" class="hidden">
+      <p id="connected-label" class="connected-label">Connected</p>
+
+      <div id="status-connected" class="status connected">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span>Linked to desktop</span>
+      </div>
+
+      <p id="stream-hint" class="code-timer" style="margin-top: 2rem;">
+        Tap Live Stream on your desktop to begin.
+      </p>
+    </div>
+  </div>
+
+  <footer>Meta Display View Caster</footer>
+
+  <script src="config.js"></script>
+  <script src="js/signaling.js"></script>
+  <script src="js/glasses.js"></script>
+</body>
+</html>

@@ -1,0 +1,280 @@
+/* Meta Display View Caster — shared styles */
+:root {
+  --bg: #0a0a0f;
+  --surface: #14141f;
+  --border: #2a2a3d;
+  --text: #f0f0f5;
+  --muted: #8888a0;
+  --accent: #0064e0;
+  --accent-hover: #0052b8;
+  --success: #00c853;
+  --error: #ff5252;
+  --code-bg: #1a1a28;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'Cascadia Code', 'Consolas', monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+a {
+  color: var(--accent);
+}
+
+.container {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  text-align: center;
+  padding: 1rem 0 2rem;
+}
+
+header h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+header p {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-top: 0.35rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.card + .card {
+  margin-top: 1rem;
+}
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+
+input[type="text"] {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  font-size: 1.5rem;
+  font-family: var(--mono);
+  letter-spacing: 0.25em;
+  text-align: center;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  outline: none;
+}
+
+input[type="text"]:focus {
+  border-color: var(--accent);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.btn-primary:not(:disabled):hover {
+  background: var(--accent-hover);
+}
+
+.btn-stream {
+  background: var(--success);
+  color: #000;
+  width: 100%;
+  font-size: 1.1rem;
+  padding: 1rem;
+}
+
+.btn-stream:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+.btn-stream.active {
+  background: var(--error);
+  color: #fff;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.status.waiting .status-dot { background: #ffb300; }
+.status.connected .status-dot { background: var(--success); }
+.status.error .status-dot { background: var(--error); }
+
+.status.waiting { color: #ffb300; }
+.status.connected { color: var(--success); }
+.status.error { color: var(--error); }
+
+.message {
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-align: center;
+  margin-top: 0.75rem;
+}
+
+.message.error {
+  color: var(--error);
+}
+
+.video-wrap {
+  position: relative;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  margin-top: 1rem;
+}
+
+.video-wrap video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.video-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+footer {
+  text-align: center;
+  padding: 1.5rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Glasses display — 600x600 viewport optimized */
+body.glasses {
+  background: #000;
+}
+
+body.glasses .container {
+  max-width: 600px;
+  padding: 1rem;
+  justify-content: center;
+  text-align: center;
+}
+
+body.glasses header h1 {
+  font-size: 1.25rem;
+}
+
+body.glasses .pair-code {
+  font-family: var(--mono);
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: #fff;
+  padding: 1.5rem 0;
+  line-height: 1;
+}
+
+body.glasses .code-timer {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+body.glasses .status {
+  font-size: 1.1rem;
+  margin: 1.5rem 0;
+}
+
+body.glasses .connected-label {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--success);
+  margin: 2rem 0;
+}
+
+body.glasses footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0.75rem;
+}
+
+@media (max-width: 480px) {
+  input[type="text"] {
+    font-size: 1.25rem;
+  }
+}
