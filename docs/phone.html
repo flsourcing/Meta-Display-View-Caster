@@ -8,8 +8,43 @@
   <meta name="apple-mobile-web-app-title" content="View Caster">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>View Caster — Phone</title>
-  <link rel="stylesheet" href="css/style.css?v=20">
+  <link rel="stylesheet" href="css/style.css?v=21">
   <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230064e0' width='100' height='100' rx='20'/><text x='50' y='62' font-size='48' text-anchor='middle' fill='white' font-family='system-ui'>VC</text></svg>">
+  <style>
+    .action-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      margin: 1rem 0;
+    }
+    .action-row .btn { width: 100%; }
+    .perm-status {
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-align: center;
+      min-height: 1.25rem;
+    }
+    .meta-panel {
+      margin-top: 1rem;
+      padding: 0.85rem;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .meta-panel.hidden { display: none; }
+    .meta-panel code {
+      display: block;
+      word-break: break-all;
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      margin: 0.5rem 0;
+      color: var(--text);
+    }
+    .meta-panel ol { margin: 0.5rem 0 0 1.1rem; padding: 0; }
+    .meta-panel li { margin: 0.35rem 0; }
+  </style>
 </head>
 <body>
   <div class="container">
@@ -18,27 +53,54 @@
       <p>Phone relay — keep this app open while connecting.</p>
     </header>
 
-    <div class="card">
+    <div id="pairing-view" class="card">
       <p class="code-timer">Pairing code</p>
       <div id="pair-code" class="pair-code relay-code">······</div>
-      <p id="code-timer" class="code-timer">Starting…</p>
-      <p class="network-status"><span id="network-dot" class="network-dot offline"></span> <span id="network-label">Relay</span></p>
+      <p id="code-timer" class="code-timer">Starting relay…</p>
+      <p class="network-status"><span id="network-dot" class="network-dot offline"></span> <span id="network-label">Relay offline</span></p>
+      <p id="relay-hint" class="code-timer" style="font-size:0.75rem;"></p>
+
+      <div class="action-row">
+        <button id="perm-btn" type="button" class="btn btn-primary">Allow camera permissions</button>
+        <button id="meta-btn" type="button" class="btn btn-primary">Connect Meta AI glasses</button>
+        <button id="restart-btn" type="button" class="btn btn-primary" style="background:var(--surface);color:var(--text);border:2px solid var(--border);">Restart relay</button>
+      </div>
+      <p id="perm-status" class="perm-status"></p>
+
+      <div id="meta-panel" class="meta-panel hidden">
+        <strong>Add this URL in Meta AI → Web apps:</strong>
+        <code id="glasses-url"></code>
+        <ol>
+          <li>Open the <strong>Meta AI</strong> app on your phone</li>
+          <li>Go to <strong>Web apps</strong> (or glasses browser settings)</li>
+          <li>Add the URL above, then open it on your glasses</li>
+          <li>Enter the pairing code shown here and tap <strong>Go</strong></li>
+        </ol>
+      </div>
+
+      <p id="keep-open-hint" class="message" style="margin-top:0.75rem;"></p>
+      <p class="message" style="margin-top:0.5rem;"><a id="desktop-link" href="./">Open desktop viewer with code</a></p>
+      <p class="message" style="margin-top:0.5rem;"><a id="capture-link" href="capture.html">Open camera page (for streaming)</a></p>
+
       <div id="status" class="status waiting" style="margin-top:1rem;">
         <span class="status-dot"></span>
         <span id="status-text">Starting…</span>
       </div>
-      <p class="message" style="margin-top:1rem;font-size:0.85rem;">
-        Desktop: <a id="desktop-link" href="./">open viewer</a><br>
-        Need native camera? <a href="install.html">Install options</a>
-      </p>
+    </div>
+
+    <div id="connected-view" class="card hidden">
+      <p id="connected-label" class="connected-label">Connected</p>
+      <p>Session code: <strong id="session-code"></strong></p>
+      <p id="stream-hint" class="message"></p>
     </div>
   </div>
 
-  <footer><a href="install.html">Install</a> · <a href="./">Desktop</a></footer>
+  <footer><a href="install.html">Install</a> · <a href="./">Desktop</a> · <a href="glasses.html">Glasses</a></footer>
 
-  <script src="config.js?v=20"></script>
-  <script src="js/ws-signaling.js?v=20"></script>
-  <script src="js/webrtc-phone.js?v=20"></script>
-  <script src="js/phone-relay.js?v=20"></script>
+  <script src="js/peerjs.min.js?v=21"></script>
+  <script src="config.js?v=21"></script>
+  <script src="js/signaling.js?v=21"></script>
+  <script src="js/relay.js?v=21"></script>
+  <script src="js/phone-actions.js?v=21"></script>
 </body>
 </html>

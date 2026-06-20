@@ -1,5 +1,6 @@
 /**
- * GitHub Pages UI + optional WebSocket signaling for native phone app.
+ * GitHub Pages UI — PeerJS relay by default (no server deploy required).
+ * Optional: deploy server/ to Render and set SIGNALING_URL for native app + WS mode.
  */
 window.CASTER_CONFIG = {
   PEER_PREFIX: 'mdvc-',
@@ -10,9 +11,9 @@ window.CASTER_CONFIG = {
   CONNECT_ATTEMPTS: 6,
   CONNECT_TOTAL_MS: 22000,
 
-  // Set after deploying server/ to Render (or your host). Example:
-  // SIGNALING_URL: 'wss://meta-display-view-caster.onrender.com',
-  SIGNALING_URL: 'wss://meta-display-view-caster.onrender.com',
+  // Leave empty for profile / Safari relay (PeerJS). After deploying server/ to Render:
+  // SIGNALING_URL: 'wss://YOUR-SERVICE.onrender.com',
+  SIGNALING_URL: '',
 
   PEERJS: {
     host: '0.peerjs.com',

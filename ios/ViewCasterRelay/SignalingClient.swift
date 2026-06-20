@@ -89,7 +89,7 @@ final class SignalingClient: ObservableObject {
             case .failure:
                 Task { @MainActor in
                     self.connected = false
-                    self.status = "Disconnected"
+                    self.status = "Could not reach signaling server"
                 }
             case .success(let message):
                 Task { @MainActor in
