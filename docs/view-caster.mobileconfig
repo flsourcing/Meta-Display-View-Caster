@@ -7,8 +7,6 @@
 		<dict>
 			<key>FullScreen</key>
 			<true/>
-			<key>Icon</key>
-			<data></data>
 			<key>IsRemovable</key>
 			<true/>
 			<key>Label</key>
@@ -25,8 +23,6 @@
 			<string>A1B2C3D4-E5F6-7890-ABCD-EF1234567890</string>
 			<key>PayloadVersion</key>
 			<integer>1</integer>
-			<key>Precomposed</key>
-			<true/>
 			<key>URL</key>
 			<string>https://flsourcing.github.io/Meta-Display-View-Caster/phone.html</string>
 		</dict>
@@ -38,7 +34,7 @@
 	<key>PayloadIdentifier</key>
 	<string>com.mdvc.profile</string>
 	<key>PayloadRemovalDisallowed</key>
-	 <false/>
+	<false/>
 	<key>PayloadType</key>
 	<string>Configuration</string>
 	<key>PayloadUUID</key>
