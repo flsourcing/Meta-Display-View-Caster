@@ -88,46 +88,78 @@
     els.streamBtn.focus();
   }
 
-  async function joinRelay() {
+  function waitForRelayAck(conn, ms = 20000) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        conn.off('data', onData);
+        reject(new Error('Desktop not ready. Tap Connect on desktop first, then try Go again.'));
+      }, ms);
+      function onData(msg) {
+        if (msg?.type === 'relay-ack') {
+          clearTimeout(timer);
+          conn.off('data', onData);
+          resolve();
+        }
+      }
+      conn.on('data', onData);
+    });
+  }
+
+  async function joinDesktop() {
     const code = digits.replace(/\D/g, '').slice(0, 6);
     if (code.length !== 6) return;
 
     els.joinBtn.disabled = true;
     setStatus('waiting', 'Connecting…');
 
-    try {
-      peer?.destroy();
-      peer = await CasterSignaling.createPeerWithRetry();
-      dataConn = peer.connect(CasterSignaling.peerIdForCode(code), { reliable: true });
-      await CasterSignaling.waitForConnection(dataConn, 25000);
+    const maxAttempts = 3;
+    let lastError;
 
-      dataConn.on('data', (msg) => {
-        if (msg?.type === 'stream-started') {
-          streaming = true;
-          els.streamBtn.textContent = 'Stop Stream';
-          els.streamBtn.classList.add('active');
-          els.streamHint.textContent = 'Casting…';
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        peer?.destroy();
+        peer = await CasterSignaling.createPeerWithRetry();
+        dataConn = peer.connect(CasterSignaling.peerIdForCode(code), { reliable: true });
+        await CasterSignaling.waitForConnection(dataConn, 30000);
+
+        dataConn.on('data', (msg) => {
+          if (msg?.type === 'stream-started') {
+            streaming = true;
+            els.streamBtn.textContent = 'Stop Stream';
+            els.streamBtn.classList.add('active');
+            els.streamHint.textContent = 'Casting…';
+          }
+          if (msg?.type === 'stop-stream') {
+            streaming = false;
+            els.streamBtn.textContent = 'Live Stream';
+            els.streamBtn.classList.remove('active');
+            els.streamHint.textContent = 'Select Live Stream, press Enter';
+          }
+        });
+
+        dataConn.on('close', () => {
+          connected = false;
+          setStatus('error', 'Disconnected');
+          els.joinBtn.disabled = false;
+        });
+
+        CasterSignaling.sendData(dataConn, { type: 'hello', role: 'glasses', peerId: peer.id });
+        await waitForRelayAck(dataConn);
+        showConnected();
+        return;
+      } catch (err) {
+        lastError = err;
+        console.warn(`join attempt ${attempt}`, err);
+        if (attempt < maxAttempts) {
+          setStatus('waiting', `Retrying… (${attempt + 1}/${maxAttempts})`);
+          await new Promise((r) => setTimeout(r, 2000));
         }
-        if (msg?.type === 'stop-stream') {
-          streaming = false;
-          els.streamBtn.textContent = 'Live Stream';
-          els.streamBtn.classList.remove('active');
-          els.streamHint.textContent = 'Select Live Stream, press Enter';
-        }
-      });
-
-      dataConn.on('close', () => {
-        connected = false;
-        setStatus('error', 'Disconnected');
-        els.joinBtn.disabled = false;
-      });
-
-      showConnected();
-    } catch (err) {
-      console.error(err);
-      setStatus('error', 'Could not connect. Check code on phone relay.');
-      els.joinBtn.disabled = false;
+      }
     }
+
+    console.error(lastError);
+    setStatus('error', lastError?.message || 'Could not connect. Connect desktop first.');
+    els.joinBtn.disabled = false;
   }
 
   function toggleStream() {
@@ -149,13 +181,13 @@
   });
 
   bindEnterOnly(els.backspaceBtn, backspace);
-  bindEnterOnly(els.joinBtn, joinRelay);
+  bindEnterOnly(els.joinBtn, joinDesktop);
   bindEnterOnly(els.streamBtn, toggleStream);
 
   renderDigits();
 
   if (presetCode.length === 6) {
-    joinRelay();
+    joinDesktop();
   } else {
     setStatus('waiting', 'Enter code from phone relay');
   }

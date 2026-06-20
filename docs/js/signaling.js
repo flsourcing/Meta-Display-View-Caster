@@ -2,7 +2,7 @@
  * PeerJS pairing + WebRTC — runs entirely from GitHub Pages.
  */
 
-const APP_VERSION = '8';
+const APP_VERSION = '13';
 
 function generateCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -56,7 +56,7 @@ function waitForConnection(conn, ms = 30000) {
     conn.once('open', () => res(conn));
     conn.once('error', rej);
     conn.once('close', () => rej(new Error('Connection closed.')));
-  }), ms, 'Could not find that code. Keep relay.html open on your phone (do not switch apps), then try Connect again.');
+  }), ms, 'Could not find that session. Connect desktop first with the same code, then try again.');
 }
 
 function createPeer(id) {
