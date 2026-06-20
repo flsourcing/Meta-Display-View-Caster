@@ -24,17 +24,18 @@
     };
   }
 
-  async function handleRemoteIce(pc, msg) {
-    if (!msg.candidate) return;
+  async function handleAnswer(msg) {
+    if (!pc || !msg?.sdp) return;
+    await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
+  }
+
+  async function handleRemoteIce(msg) {
+    if (!pc || !msg?.candidate) return;
     await pc.addIceCandidate({
       candidate: msg.candidate,
       sdpMLineIndex: msg.sdpMLineIndex,
       sdpMid: msg.sdpMid || null,
     });
-  }
-
-  async function handleAnswer(pc, msg) {
-    await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
   }
 
   async function startStream(ws) {

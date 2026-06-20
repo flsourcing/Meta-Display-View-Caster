@@ -10,7 +10,7 @@
   <meta name="mrbd-web-app-capable" content="yes">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>View Caster — Phone</title>
-  <link rel="stylesheet" href="css/style.css?v=24">
+  <link rel="stylesheet" href="css/style.css?v=25">
   <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230064e0' width='100' height='100' rx='20'/><text x='50' y='62' font-size='48' text-anchor='middle' fill='white' font-family='system-ui'>VC</text></svg>">
   <style>
     .setup-step { text-align: center; }
@@ -113,6 +113,7 @@
 
         <div class="ready-actions">
           <button id="restart-btn" type="button" class="btn btn-primary secondary">Restart relay</button>
+          <a href="deploy-server.html" class="btn linkish" style="text-align:center;display:block;">Server setup (one-time)</a>
           <button id="reset-setup-btn" type="button" class="btn linkish">Run setup again</button>
         </div>
       </div>
@@ -127,11 +128,11 @@
 
   <footer><a href="install.html">Install</a> · <a href="./">Desktop</a> · <a href="glasses.html">Glasses</a></footer>
 
-  <script src="js/peerjs.min.js?v=24"></script>
-  <script src="config.js?v=24"></script>
-  <script src="js/meta-ai-link.js?v=24"></script>
-  <script src="js/signaling.js?v=24"></script>
-  <script src="js/relay.js?v=24"></script>
-  <script src="js/phone-setup.js?v=24"></script>
+  <script src="config.js?v=25"></script>
+  <script src="js/ws-signaling.js?v=25"></script>
+  <script src="js/webrtc-phone.js?v=25"></script>
+  <script src="js/meta-ai-link.js?v=25"></script>
+  <script src="js/phone-relay-hybrid.js?v=25"></script>
+  <script src="js/phone-setup.js?v=25"></script>
 </body>
 </html>

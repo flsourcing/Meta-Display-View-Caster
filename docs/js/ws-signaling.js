@@ -1,5 +1,5 @@
 /**
- * WebSocket signaling — used with native phone app + deployed server.
+ * WebSocket signaling — pairing goes through server (reliable iPhone ↔ desktop).
  */
 (function () {
   function wsUrl() {
@@ -10,21 +10,58 @@
     return null;
   }
 
-  function connect() {
+  function httpBase() {
     const url = wsUrl();
-    if (!url) return Promise.reject(new Error('Signaling server URL not configured.'));
+    if (!url) return null;
+    return url.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:').replace(/\/$/, '');
+  }
+
+  async function wakeServer() {
+    const base = httpBase();
+    if (!base) return false;
+    try {
+      const res = await fetch(`${base}/health`, { cache: 'no-store', mode: 'cors' });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  function connectOnce(url, ms) {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(url);
       const timer = setTimeout(() => {
         ws.close();
-        reject(new Error('Signaling server timeout. Is the server running?'));
-      }, 15000);
+        reject(new Error('Signaling server timeout. Free servers may take up to 60s to wake — try again.'));
+      }, ms);
       ws.onopen = () => { clearTimeout(timer); resolve(ws); };
-      ws.onerror = () => { clearTimeout(timer); reject(new Error('Could not reach signaling server.')); };
+      ws.onerror = () => {
+        clearTimeout(timer);
+        reject(new Error('Could not reach signaling server.'));
+      };
     });
   }
 
-  function waitFor(ws, types, ms = 20000) {
+  async function connect() {
+    const url = wsUrl();
+    if (!url) {
+      return Promise.reject(new Error('Signaling server not configured. Deploy the server first (see deploy-server.html).'));
+    }
+    await wakeServer();
+    try {
+      return await connectOnce(url, 20000);
+    } catch (first) {
+      await wakeServer();
+      await sleep(3000);
+      return connectOnce(url, 45000);
+    }
+  }
+
+  function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
+  function waitFor(ws, types, ms = 30000) {
     const want = Array.isArray(types) ? types : [types];
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -68,5 +105,5 @@
     return ws;
   }
 
-  window.CasterWS = { connect, send, waitFor, pairDesktop, joinGlasses, wsUrl };
+  window.CasterWS = { connect, send, waitFor, pairDesktop, joinGlasses, wsUrl, wakeServer, httpBase };
 })();

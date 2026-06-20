@@ -11,9 +11,9 @@ window.CASTER_CONFIG = {
   CONNECT_ATTEMPTS: 8,
   CONNECT_TOTAL_MS: 45000,
 
-  // Leave empty for profile / Safari relay (PeerJS). After deploying server/ to Render:
-  // SIGNALING_URL: 'wss://YOUR-SERVICE.onrender.com',
-  SIGNALING_URL: '',
+  // Required for iPhone ↔ desktop pairing. Deploy server/ to Render once, then set wss:// URL here.
+  // See deploy-server.html
+  SIGNALING_URL: 'wss://meta-display-view-caster.onrender.com',
 
   GLASSES_APP_URL: 'https://flsourcing.github.io/Meta-Display-View-Caster/glasses.html',
   GLASSES_APP_NAME: 'ViewCaster',

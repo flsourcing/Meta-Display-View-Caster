@@ -38,8 +38,6 @@
   let registering = false;
   let lastRegisterAt = 0;
   let wakeLock = null;
-  let connectingDesktop = false;
-  let desktopPollInterval = null;
 
   function setStatus(kind, text) {
     els.status.className = `status ${kind}`;
@@ -99,38 +97,6 @@
         showSessionView();
       }
     });
-  }
-
-  async function tryConnectDesktop() {
-    if (connectingDesktop || desktopConn?.open || !peer?.open || !currentCode) return;
-    connectingDesktop = true;
-    let conn;
-    const prevStatus = els.statusText?.textContent;
-    try {
-      if (!glassesConn?.open) setStatus('waiting', 'Linking to desktop…');
-      conn = peer.connect(CasterSignaling.desktopPeerIdForCode(currentCode), { reliable: true });
-      await CasterSignaling.waitForConnection(conn, 12000);
-      CasterSignaling.sendData(conn, { type: 'hello', role: 'phone-relay', code: currentCode });
-      await CasterSignaling.waitForRelayAck(conn, 10000);
-      desktopConn = conn;
-      desktopPeerId = CasterSignaling.desktopPeerIdForCode(currentCode);
-      bindDesktopConn(conn);
-      showSessionView();
-      setStatus('connected', 'Desktop connected — connect glasses');
-    } catch {
-      try { conn?.close?.(); } catch { /* ignore */ }
-      if (!desktopConn?.open && !glassesConn?.open && prevStatus) {
-        setStatus('waiting', 'Ready — tap Connect on desktop');
-      }
-    } finally {
-      connectingDesktop = false;
-    }
-  }
-
-  function startDesktopPolling() {
-    if (desktopPollInterval) return;
-    tryConnectDesktop();
-    desktopPollInterval = setInterval(tryConnectDesktop, 1000);
   }
 
   function captureUrl() {
@@ -213,8 +179,6 @@
       setNetworkOnline(true);
       if (currentCode) {
         setStatus('waiting', 'Ready — enter code on desktop and glasses');
-        tryConnectDesktop();
-        startDesktopPolling();
       }
     });
 
@@ -286,8 +250,6 @@
       showCode(code);
       setNetworkOnline(true);
       setStatus('waiting', 'Ready — enter code on desktop and glasses');
-      tryConnectDesktop();
-      startDesktopPolling();
       clearTimeout(rotationTimeout);
       rotationTimeout = setTimeout(() => {
         if (!desktopConn?.open && !glassesConn?.open) register(CasterSignaling.generateCode());
@@ -389,7 +351,8 @@
   function restartRelay() {
     stopInlineStream(false);
     stopCamBridge(false);
-    register(CasterSignaling.generateCode());
+    const code = currentCode || CasterSignaling.generateCode();
+    register(code, true);
   }
 
   window.CasterRelay = { start: startRelay, restart: restartRelay };

@@ -119,7 +119,9 @@
   }
 
   async function connectWS(code) {
-    setStatus('waiting', 'Connecting to server…');
+    setStatus('waiting', 'Waking signaling server…');
+    await CasterWS.wakeServer?.().catch(() => {});
+    setStatus('waiting', 'Connecting…');
     ws = await CasterWS.pairDesktop(code);
     bindWsMessages();
     connected = true;
@@ -139,34 +141,20 @@
     });
   }
 
-  async function raceConnectPeerJS(code) {
+  async function connectPeerJS(code) {
     destroyPeers();
     connectAbort = false;
-    hostPeer = await CasterSignaling.createNamedPeerWithRetry(CasterSignaling.desktopPeerIdForCode(code));
     clientPeer = await CasterSignaling.createPeerWithRetry();
-    setupPeer(hostPeer);
     setupPeer(clientPeer);
     const onStatus = (msg) => { if (!connectAbort) setStatus('waiting', msg); };
-
-    const inbound = (async () => {
-      onStatus('Waiting for phone relay…');
-      const conn = await CasterSignaling.waitForIncomingHello(hostPeer, 'phone-relay', 45000);
-      return { conn, keep: hostPeer, drop: clientPeer };
-    })();
-
-    const outbound = CasterSignaling.connectToRelay(code, clientPeer, 'desktop', onStatus)
-      .then((conn) => ({ conn, keep: clientPeer, drop: hostPeer }));
-
-    const result = await CasterSignaling.withTimeout(
-      CasterSignaling.connectAny([inbound, outbound]),
-      50000,
-      'Timed out. Keep the phone app open until the relay dot is green, then try again.',
+    const conn = await CasterSignaling.withTimeout(
+      CasterSignaling.connectToRelay(code, clientPeer, 'desktop', onStatus),
+      55000,
+      'Timed out. Keep the phone app open with a green dot, then try again.',
     );
-
     if (connectAbort) throw new Error('Cancelled.');
-    result.drop?.destroy();
-    peer = result.keep;
-    return result.conn;
+    peer = clientPeer;
+    return conn;
   }
 
   function bindPeerRelayMessages() {
@@ -197,7 +185,7 @@
       if (useWS) {
         await connectWS(code);
       } else {
-        dataConn = await raceConnectPeerJS(code);
+        dataConn = await connectPeerJS(code);
         bindPeerRelayMessages();
         connected = true;
         showViewer(code);
@@ -209,7 +197,12 @@
       destroyPeers();
       ws?.close();
       ws = null;
-      showError(err.message || 'Connection failed.');
+      let msg = err.message || 'Connection failed.';
+      if (useWS && msg.includes('not found')) msg += ' Keep the phone app open until you see a code.';
+      if (useWS && (msg.includes('Could not reach') || msg.includes('timeout') || msg.includes('not configured'))) {
+        msg += ' Deploy the signaling server: deploy-server.html';
+      }
+      showError(msg);
       setStatus('error', 'Could not connect');
       els.connectBtn.textContent = 'Connect';
       els.connectBtn.disabled = false;
