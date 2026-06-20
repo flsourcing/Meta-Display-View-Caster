@@ -1,5 +1,6 @@
 import Foundation
 
+@MainActor
 final class SignalingClient: ObservableObject {
     @Published var code = "------"
     @Published var status = "Offline"
@@ -107,49 +108,47 @@ final class SignalingClient: ObservableObject {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = json["type"] as? String else { return }
 
-        Task { @MainActor in
-            switch type {
-            case "relay-registered", "code-rotated":
-                if let c = json["code"] as? String { self.code = c }
-                self.connected = true
-                self.status = "Ready — connect desktop & glasses"
-                self.startPing()
-            case "desktop-joined":
-                self.desktopLinked = true
-                self.status = "Desktop connected"
-            case "glasses-joined":
-                self.glassesLinked = true
-                self.status = self.desktopLinked ? "All linked" : "Glasses connected"
-            case "desktop-left":
-                self.desktopLinked = false
-                self.status = "Desktop disconnected"
-            case "glasses-left":
-                self.glassesLinked = false
-            case "start-stream":
-                self.onStartStream?()
-            case "stop-stream":
-                self.onStopStream?()
-            case "offer":
-                if let sdp = json["sdp"] as? String { self.onOffer?(sdp) }
-            case "answer":
-                if let sdp = json["sdp"] as? String { self.onAnswer?(sdp) }
-            case "ice-candidate":
-                if let c = json["candidate"] as? String {
-                    let idx = json["sdpMLineIndex"] as? Int32 ?? 0
-                    let mid = json["sdpMid"] as? String
-                    self.onIceCandidate?(c, idx, mid)
-                }
-            case "error":
-                self.status = json["message"] as? String ?? "Error"
-            default:
-                break
+        switch type {
+        case "relay-registered", "code-rotated":
+            if let c = json["code"] as? String { code = c }
+            connected = true
+            status = "Ready — connect desktop & glasses"
+            startPing()
+        case "desktop-joined":
+            desktopLinked = true
+            status = "Desktop connected"
+        case "glasses-joined":
+            glassesLinked = true
+            status = desktopLinked ? "All linked" : "Glasses connected"
+        case "desktop-left":
+            desktopLinked = false
+            status = "Desktop disconnected"
+        case "glasses-left":
+            glassesLinked = false
+        case "start-stream":
+            onStartStream?()
+        case "stop-stream":
+            onStopStream?()
+        case "offer":
+            if let sdp = json["sdp"] as? String { onOffer?(sdp) }
+        case "answer":
+            if let sdp = json["sdp"] as? String { onAnswer?(sdp) }
+        case "ice-candidate":
+            if let c = json["candidate"] as? String {
+                let idx = json["sdpMLineIndex"] as? Int32 ?? 0
+                let mid = json["sdpMid"] as? String
+                onIceCandidate?(c, idx, mid)
             }
+        case "error":
+            status = json["message"] as? String ?? "Error"
+        default:
+            break
         }
     }
 
     private func startPing() {
         pingTask?.cancel()
-        pingTask = Task {
+        pingTask = Task { @MainActor in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 20_000_000_000)
                 ws?.sendPing { _ in }

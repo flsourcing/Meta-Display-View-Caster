@@ -34,7 +34,8 @@ jobs:
             -archivePath "$PWD/build/ViewCasterRelay.xcarchive" \
             archive \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_REQUIRED=NO \
+            OTHER_SWIFT_FLAGS="-strict-concurrency=minimal"
 
       - name: Package IPA for Sideloadly
         run: |

@@ -43,10 +43,11 @@ final class WebRTCManager: NSObject {
         )
         pc?.offer(for: offerConstraints) { [weak self] sdp, error in
             guard let self, let sdp, error == nil else { return }
+            let offerSdp = sdp.sdp
             self.pc?.setLocalDescription(sdp) { err in
                 guard err == nil else { return }
-                Task { @MainActor in
-                    self.signaling?.sendOffer(sdp.sdp)
+                Task { @MainActor [weak self] in
+                    self?.signaling?.sendOffer(offerSdp)
                 }
             }
         }
@@ -80,11 +81,14 @@ extension WebRTCManager: RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
-        Task { @MainActor in
-            signaling?.sendIceCandidate(
-                candidate.sdp,
-                sdpMLineIndex: candidate.sdpMLineIndex,
-                sdpMid: candidate.sdpMid
+        let candidateSdp = candidate.sdp
+        let mLineIndex = candidate.sdpMLineIndex
+        let mid = candidate.sdpMid
+        Task { @MainActor [weak self] in
+            self?.signaling?.sendIceCandidate(
+                candidateSdp,
+                sdpMLineIndex: mLineIndex,
+                sdpMid: mid
             )
         }
     }
