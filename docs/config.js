@@ -1,11 +1,12 @@
 /**
- * Signaling server URL.
- * After deploying the server (see README), set this to your public WebSocket endpoint.
- * Example: wss://meta-display-view-caster.onrender.com
+ * Meta Display View Caster — client-side config (GitHub Pages only, no backend).
  */
 window.CASTER_CONFIG = {
-  // Replace with your deployed signaling server URL (no trailing slash)
-  SIGNALING_URL: 'wss://meta-display-view-caster.onrender.com',
+  // Prefix for PeerJS room IDs (keeps IDs unique on the public PeerJS cloud)
+  PEER_PREFIX: 'mdvc-',
+
+  // Pairing code rotates every 60 seconds for privacy
+  CODE_ROTATION_MS: 60_000,
 
   // STUN servers for WebRTC NAT traversal
   ICE_SERVERS: [

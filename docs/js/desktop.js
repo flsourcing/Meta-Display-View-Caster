@@ -16,10 +16,12 @@
     videoPlaceholder: document.getElementById('video-placeholder'),
   };
 
-  let ws = null;
-  let pc = null;
+  let peer = null;
+  let dataConn = null;
+  let activeCall = null;
   let streaming = false;
   let connected = false;
+  let glassesPeerId = null;
 
   function setStatus(kind, text) {
     els.status.className = `status ${kind}`;
@@ -37,87 +39,59 @@
     setStatus('connected', 'Connected to glasses');
   }
 
+  function cleanupCall() {
+    activeCall?.close();
+    activeCall = null;
+    els.remoteVideo.srcObject = null;
+    els.videoPlaceholder.classList.remove('hidden');
+  }
+
   function resetToConnect() {
     connected = false;
     streaming = false;
-    pc?.close();
-    pc = null;
-    els.remoteVideo.srcObject = null;
+    cleanupCall();
+    dataConn?.close();
+    dataConn = null;
+    peer?.destroy();
+    peer = null;
+    glassesPeerId = null;
     els.viewerSection.classList.add('hidden');
     els.connectSection.classList.remove('hidden');
     els.streamBtn.textContent = 'Live Stream';
     els.streamBtn.classList.remove('active');
     els.streamBtn.disabled = false;
-    els.videoPlaceholder.classList.remove('hidden');
-    setStatus('waiting', 'Waiting to connect');
+    els.connectBtn.disabled = false;
+    setStatus('waiting', 'Enter code from glasses');
     showError('');
   }
 
-  function ensurePeerConnection() {
-    if (pc) return pc;
-
-    pc = CasterSignaling.createPeerConnection(
-      (event) => {
-        if (event.streams?.[0]) {
-          els.remoteVideo.srcObject = event.streams[0];
-          els.videoPlaceholder.classList.add('hidden');
+  function setupPeerHandlers() {
+    peer.on('call', (call) => {
+      activeCall = call;
+      call.answer();
+      call.on('stream', (stream) => {
+        els.remoteVideo.srcObject = stream;
+        els.videoPlaceholder.classList.add('hidden');
+      });
+      call.on('close', () => {
+        if (streaming) {
+          cleanupCall();
         }
-      },
-      (candidate) => {
-        CasterSignaling.send(ws, { type: 'ice-candidate', candidate });
+      });
+    });
+
+    peer.on('disconnected', () => {
+      if (connected) {
+        showError('Connection lost. Reconnecting…');
       }
-    );
+    });
 
-    return pc;
+    peer.on('close', () => {
+      if (connected) resetToConnect();
+    });
   }
 
-  async function handleOffer(offer) {
-    const peer = ensurePeerConnection();
-    await peer.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await peer.createAnswer();
-    await peer.setLocalDescription(answer);
-    CasterSignaling.send(ws, { type: 'answer', answer: peer.localDescription });
-  }
-
-  function handleMessage(msg) {
-    switch (msg.type) {
-      case 'paired':
-        connected = true;
-        showViewer();
-        showError('');
-        break;
-
-      case 'error':
-        showError(msg.message);
-        els.connectBtn.disabled = false;
-        break;
-
-      case 'disconnected':
-        showError(msg.message || 'Disconnected from glasses.');
-        resetToConnect();
-        break;
-
-      case 'offer':
-        handleOffer(msg.offer);
-        break;
-
-      case 'ice-candidate':
-        if (msg.candidate && pc) {
-          pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(console.error);
-        }
-        break;
-
-      case 'stop-stream':
-        streaming = false;
-        els.streamBtn.textContent = 'Live Stream';
-        els.streamBtn.classList.remove('active');
-        els.remoteVideo.srcObject = null;
-        els.videoPlaceholder.classList.remove('hidden');
-        break;
-    }
-  }
-
-  function connect() {
+  async function connect() {
     const code = els.codeInput.value.replace(/\D/g, '').slice(0, 6);
     if (code.length !== 6) {
       showError('Enter the 6-digit code shown on your glasses.');
@@ -128,41 +102,61 @@
     els.connectBtn.disabled = true;
     setStatus('waiting', 'Connecting…');
 
+    glassesPeerId = CasterSignaling.peerIdForCode(code);
+
     try {
-      ws = CasterSignaling.createSignalingConnection(handleMessage, () => {
+      peer = new Peer(CasterSignaling.createPeerOptions());
+      setupPeerHandlers();
+      await CasterSignaling.waitForPeerOpen(peer);
+
+      dataConn = peer.connect(glassesPeerId, { reliable: true });
+      await CasterSignaling.waitForConnection(dataConn);
+
+      dataConn.on('data', (msg) => {
+        if (msg?.type === 'stop-stream') {
+          streaming = false;
+          els.streamBtn.textContent = 'Live Stream';
+          els.streamBtn.classList.remove('active');
+          cleanupCall();
+        }
+      });
+
+      dataConn.on('close', () => {
         if (connected) {
-          showError('Lost connection to server.');
+          showError('Glasses disconnected.');
           resetToConnect();
         }
       });
 
-      ws.addEventListener('open', () => {
-        CasterSignaling.send(ws, { type: 'pair', code });
-      });
+      CasterSignaling.sendData(dataConn, { type: 'hello', peerId: peer.id });
+      connected = true;
+      showViewer();
+      showError('');
     } catch (err) {
-      showError(err.message);
+      console.error('[caster] connect failed:', err);
+      showError('Could not connect. Check the code on your glasses and try again.');
       els.connectBtn.disabled = false;
-      setStatus('error', 'Configuration error');
+      setStatus('waiting', 'Enter code from glasses');
+      peer?.destroy();
+      peer = null;
+      dataConn = null;
     }
   }
 
   function toggleStream() {
-    if (!connected || !ws) return;
+    if (!connected || !dataConn?.open) return;
 
     if (!streaming) {
       streaming = true;
       els.streamBtn.textContent = 'Stop Stream';
       els.streamBtn.classList.add('active');
-      CasterSignaling.send(ws, { type: 'start-stream' });
+      CasterSignaling.sendData(dataConn, { type: 'start-stream', peerId: peer.id });
     } else {
       streaming = false;
       els.streamBtn.textContent = 'Live Stream';
       els.streamBtn.classList.remove('active');
-      CasterSignaling.send(ws, { type: 'stop-stream' });
-      els.remoteVideo.srcObject = null;
-      els.videoPlaceholder.classList.remove('hidden');
-      pc?.close();
-      pc = null;
+      CasterSignaling.sendData(dataConn, { type: 'stop-stream' });
+      cleanupCall();
     }
   }
 

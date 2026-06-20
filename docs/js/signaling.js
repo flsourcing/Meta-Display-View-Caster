@@ -1,78 +1,59 @@
 /**
- * Shared WebSocket + WebRTC helpers for Meta Display View Caster
+ * Client-side pairing + WebRTC via PeerJS (no custom server — works on GitHub Pages).
  */
 
-function getSignalingUrl() {
-  const cfg = window.CASTER_CONFIG?.SIGNALING_URL || '';
-  if (!cfg || cfg.includes('YOUR-SERVER')) {
-    return null;
-  }
-  return cfg.replace(/^http/, 'ws');
+function generateCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-function createSignalingConnection(onMessage, onClose) {
-  const url = getSignalingUrl();
-  if (!url) {
-    throw new Error('Signaling server not configured. Edit docs/config.js with your server URL.');
-  }
+function peerIdForCode(code) {
+  const prefix = window.CASTER_CONFIG?.PEER_PREFIX || 'mdvc-';
+  return `${prefix}${code}`;
+}
 
-  const ws = new WebSocket(url);
-
-  ws.onopen = () => {
-    console.log('[caster] connected to signaling server');
+function createPeerOptions() {
+  return {
+    config: {
+      iceServers: window.CASTER_CONFIG?.ICE_SERVERS || [
+        { urls: 'stun:stun.l.google.com:19302' },
+      ],
+    },
   };
+}
 
-  ws.onmessage = (event) => {
-    let msg;
-    try {
-      msg = JSON.parse(event.data);
-    } catch {
+function waitForPeerOpen(peer) {
+  return new Promise((resolve, reject) => {
+    if (peer.open) {
+      resolve(peer);
       return;
     }
-    onMessage(msg);
-  };
-
-  ws.onerror = () => {
-    console.error('[caster] WebSocket error');
-  };
-
-  ws.onclose = () => {
-    onClose?.();
-  };
-
-  return ws;
+    peer.once('open', () => resolve(peer));
+    peer.once('error', reject);
+  });
 }
 
-function send(ws, payload) {
-  if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(payload));
-  }
-}
-
-function createPeerConnection(onTrack, onIceCandidate) {
-  const iceServers = window.CASTER_CONFIG?.ICE_SERVERS || [{ urls: 'stun:stun.l.google.com:19302' }];
-  const pc = new RTCPeerConnection({ iceServers });
-
-  pc.ontrack = (event) => {
-    onTrack?.(event);
-  };
-
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      onIceCandidate?.(event.candidate);
+function waitForConnection(conn) {
+  return new Promise((resolve, reject) => {
+    if (conn.open) {
+      resolve(conn);
+      return;
     }
-  };
+    conn.once('open', () => resolve(conn));
+    conn.once('error', reject);
+  });
+}
 
-  pc.onconnectionstatechange = () => {
-    console.log('[caster] ICE connection state:', pc.connectionState);
-  };
-
-  return pc;
+function sendData(conn, payload) {
+  if (conn?.open) {
+    conn.send(payload);
+  }
 }
 
 window.CasterSignaling = {
-  getSignalingUrl,
-  createSignalingConnection,
-  send,
-  createPeerConnection,
+  generateCode,
+  peerIdForCode,
+  createPeerOptions,
+  waitForPeerOpen,
+  waitForConnection,
+  sendData,
 };
