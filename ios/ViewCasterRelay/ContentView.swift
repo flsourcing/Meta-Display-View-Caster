@@ -10,7 +10,7 @@ final class RelayViewModel: ObservableObject {
     @Published private(set) var signaling: SignalingClient
     @Published var metaHint = ""
     @Published private(set) var wearables = WearablesManager()
-    @Published var sideloadTeamId = SigningInfo.embeddedTeamIdentifier ?? ""
+    @Published var sideloadTeamId = SigningInfo.displayTeamID ?? ""
     @Published var metaBlocked = SigningInfo.needsTeamIDPatch
 
     private lazy var webrtc = WebRTCManager()
@@ -83,13 +83,17 @@ final class RelayViewModel: ObservableObject {
     }
 
     func copyTeamIdForPatch() {
-        let team = sideloadTeamId.isEmpty ? "YOUR10CHARID" : sideloadTeamId
+        let team = SigningInfo.displayTeamID ?? sideloadTeamId
+        guard !team.isEmpty else {
+            metaHint = "Team ID not found — use JM52FT93Z2 or check Sideloadly install log."
+            return
+        }
         UIPasteboard.general.string = team
-        metaHint = "Copied Team ID \(team). Patch the IPA on PC, then reinstall."
+        metaHint = "Copied Team ID \(team)."
     }
 
     func refreshMetaInstallState() {
-        sideloadTeamId = SigningInfo.embeddedTeamIdentifier ?? sideloadTeamId
+        sideloadTeamId = SigningInfo.displayTeamID ?? sideloadTeamId
         metaBlocked = SigningInfo.needsTeamIDPatch
     }
 
@@ -172,12 +176,15 @@ struct ContentView: View {
                             Text("Meta AI can't connect to this install")
                                 .font(.subheadline.bold())
                                 .foregroundStyle(.orange)
-                            Text("The IPA must include your Apple Team ID before sideloading. This is why Meta AI opens but shows no connection prompt.")
+                            Text("This IPA is missing your Team ID in MWDAT config. Install the GitHub release built for your Team ID.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
-                            if !model.sideloadTeamId.isEmpty {
-                                Text("Your Team ID: \(model.sideloadTeamId)")
+                            if let configured = SigningInfo.configuredMWTeamID {
+                                Text("Built-in Team ID: \(configured)")
+                                    .font(.caption.monospaced())
+                            } else if !model.sideloadTeamId.isEmpty {
+                                Text("Sideload Team ID: \(model.sideloadTeamId)")
                                     .font(.caption.monospaced())
                             }
                             Button("Copy Team ID") {

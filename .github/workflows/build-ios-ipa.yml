@@ -22,14 +22,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Inject Team ID for Meta AI
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.team_id != ''
-        run: |
-          PLIST=ios/ViewCasterRelay/Info.plist
-          /usr/libexec/PlistBuddy -c "Delete :MWDAT:TeamID" "$PLIST" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Add :MWDAT:TeamID string '${{ github.event.inputs.team_id }}'" "$PLIST"
-          echo "Set MWDAT.TeamID=${{ github.event.inputs.team_id }}"
-
       - name: Install xcodegen
         run: brew install xcodegen
 
@@ -49,6 +41,15 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             OTHER_SWIFT_FLAGS="-strict-concurrency=minimal"
+
+      - name: Inject Team ID into built app
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.team_id != ''
+        run: |
+          PLIST="ios/build/ViewCasterRelay.xcarchive/Products/Applications/ViewCasterRelay.app/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :MWDAT" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Delete :MWDAT:TeamID" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :MWDAT:TeamID string '${{ github.event.inputs.team_id }}'" "$PLIST"
+          echo "Verified MWDAT.TeamID=$(/usr/libexec/PlistBuddy -c 'Print :MWDAT:TeamID' "$PLIST")"
 
       - name: Package IPA for Sideloadly
         run: |
@@ -71,6 +72,6 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
         with:
           tag_name: ios-${{ github.run_number }}
-          name: View Caster Relay iOS ${{ github.run_number }}
+          name: ${{ github.event.inputs.team_id != '' && format('View Caster Relay iOS {0} (Team {1})', github.run_number, github.event.inputs.team_id) || format('View Caster Relay iOS {0}', github.run_number) }}
           files: ios/build/ViewCasterRelay-unsigned.ipa
           generate_release_notes: true
