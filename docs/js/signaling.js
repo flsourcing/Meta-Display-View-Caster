@@ -1,146 +1,108 @@
 /**
- * Client-side pairing + WebRTC via PeerJS (no custom server — works on GitHub Pages).
+ * WebSocket signaling + WebRTC helpers
  */
 
-const APP_VERSION = '6';
+const APP_VERSION = '7';
+
+function getSignalingUrl() {
+  const url = window.CASTER_CONFIG?.SIGNALING_URL || '';
+  if (!url) throw new Error('Signaling server not configured.');
+  return url.replace(/^http/i, 'ws');
+}
+
+function getHttpUrl() {
+  return getSignalingUrl().replace(/^ws/i, 'http');
+}
+
+async function wakeServer() {
+  try {
+    await fetch(`${getHttpUrl()}/health`, { cache: 'no-store' });
+  } catch {
+    // Server may be waking up on Render free tier
+  }
+}
+
+function createSignalingConnection(onMessage, onClose) {
+  const ws = new WebSocket(getSignalingUrl());
+
+  ws.onopen = () => console.log('[caster] signaling connected');
+
+  ws.onmessage = (event) => {
+    try {
+      onMessage(JSON.parse(event.data));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  ws.onerror = () => console.error('[caster] signaling error');
+  ws.onclose = () => onClose?.();
+
+  return ws;
+}
+
+function send(ws, payload) {
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
+}
+
+function waitForOpen(ws, timeoutMs = 30000) {
+  if (ws.readyState === WebSocket.OPEN) return Promise.resolve(ws);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Could not reach signaling server. Wait 30 seconds and try again (server may be waking up).')), timeoutMs);
+    ws.addEventListener('open', () => { clearTimeout(timer); resolve(ws); }, { once: true });
+    ws.addEventListener('error', () => { clearTimeout(timer); reject(new Error('Signaling server unreachable.')); }, { once: true });
+  });
+}
+
+function waitForMessage(ws, type, timeoutMs = 30000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Connection timed out. Check the code on your glasses and try again.')), timeoutMs);
+    const handler = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === type) {
+          clearTimeout(timer);
+          ws.removeEventListener('message', handler);
+          resolve(msg);
+        } else if (msg.type === 'error') {
+          clearTimeout(timer);
+          ws.removeEventListener('message', handler);
+          reject(new Error(msg.message));
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    ws.addEventListener('message', handler);
+  });
+}
+
+function createPeerConnection(onTrack, onIceCandidate) {
+  const pc = new RTCPeerConnection({
+    iceServers: window.CASTER_CONFIG?.ICE_SERVERS || [{ urls: 'stun:stun.l.google.com:19302' }],
+  });
+  pc.ontrack = (e) => onTrack?.(e);
+  pc.onicecandidate = (e) => { if (e.candidate) onIceCandidate?.(e.candidate); };
+  return pc;
+}
+
+function hasCameraSupport() {
+  return !!(navigator.mediaDevices?.getUserMedia);
+}
 
 function generateCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-function peerIdForCode(code) {
-  const prefix = window.CASTER_CONFIG?.PEER_PREFIX || 'mdvc-';
-  return `${prefix}${code}`;
-}
-
-function camPeerIdForCode(code) {
-  const prefix = window.CASTER_CONFIG?.CAM_PREFIX || 'mdvc-cam-';
-  return `${prefix}${code}`;
-}
-
-function hasCameraSupport() {
-  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-}
-
-function getPeerHosts() {
-  const cfg = window.CASTER_CONFIG || {};
-  if (cfg.PEER_HOSTS?.length) return cfg.PEER_HOSTS;
-  return [{
-    host: cfg.PEER_HOST || '0.peerjs.com',
-    port: cfg.PEER_PORT || 443,
-    path: cfg.PEER_PATH || '/',
-    secure: cfg.PEER_SECURE !== false,
-    key: cfg.PEER_KEY || 'peerjs',
-  }];
-}
-
-function createPeerOptions(id, hostIndex = 0) {
-  const hosts = getPeerHosts();
-  const server = hosts[hostIndex] || hosts[0];
-  const options = {
-    host: server.host,
-    port: server.port,
-    path: server.path,
-    secure: server.secure !== false,
-    key: server.key || 'peerjs',
-    debug: 2,
-    config: {
-      iceServers: window.CASTER_CONFIG?.ICE_SERVERS || [
-        { urls: 'stun:stun.l.google.com:19302' },
-      ],
-    },
-  };
-  if (id) options.id = id;
-  return options;
-}
-
-function withTimeout(promise, ms, message) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(message || `Timed out after ${ms / 1000}s`));
-    }, ms);
-    promise
-      .then((value) => {
-        clearTimeout(timer);
-        resolve(value);
-      })
-      .catch((err) => {
-        clearTimeout(timer);
-        reject(err);
-      });
-  });
-}
-
-function waitForPeerOpen(peer, timeoutMs = 20000) {
-  if (peer.destroyed) {
-    return Promise.reject(new Error('Peer was destroyed before it could connect.'));
-  }
-  if (peer.open) return Promise.resolve(peer);
-
-  return withTimeout(
-    new Promise((resolve, reject) => {
-      peer.once('open', () => resolve(peer));
-      peer.once('error', reject);
-      peer.once('close', () => reject(new Error('Peer closed before connecting to the network.')));
-    }),
-    timeoutMs,
-    'Could not reach the pairing network. Check your internet connection and try again.',
-  );
-}
-
-function waitForConnection(conn, timeoutMs = 30000) {
-  if (conn.open) return Promise.resolve(conn);
-
-  return withTimeout(
-    new Promise((resolve, reject) => {
-      conn.once('open', () => resolve(conn));
-      conn.once('error', reject);
-      conn.once('close', () => reject(new Error('Connection closed before pairing completed.')));
-    }),
-    timeoutMs,
-    'Could not find glasses with that code. Make sure glasses.html is open, the code matches exactly, and try again immediately.',
-  );
-}
-
-function sendData(conn, payload) {
-  if (conn?.open) {
-    conn.send(payload);
-  }
-}
-
-function createPeer(id, hostIndex = 0) {
-  return new Peer(createPeerOptions(id, hostIndex));
-}
-
-async function createPeerWithFallback(id) {
-  const hosts = getPeerHosts();
-  let lastError;
-
-  for (let i = 0; i < hosts.length; i += 1) {
-    const peer = createPeer(id, i);
-    try {
-      await waitForPeerOpen(peer);
-      return peer;
-    } catch (err) {
-      lastError = err;
-      peer.destroy();
-    }
-  }
-
-  throw lastError || new Error('Could not connect to the pairing network.');
-}
-
 window.CasterSignaling = {
   APP_VERSION,
-  generateCode,
-  peerIdForCode,
-  camPeerIdForCode,
+  wakeServer,
+  getSignalingUrl,
+  createSignalingConnection,
+  send,
+  waitForOpen,
+  waitForMessage,
+  createPeerConnection,
   hasCameraSupport,
-  createPeerOptions,
-  createPeer,
-  createPeerWithFallback,
-  withTimeout,
-  waitForPeerOpen,
-  waitForConnection,
-  sendData,
+  generateCode,
 };

@@ -1,5 +1,5 @@
 /**
- * Glasses web app — pairing, connected state, Live Stream control
+ * Glasses — pairing, connected state, Live Stream control
  */
 
 (function () {
@@ -18,23 +18,15 @@
     sessionCode: document.getElementById('session-code'),
   };
 
-  const ROTATION_MS = window.CASTER_CONFIG?.CODE_ROTATION_MS || 180_000;
-
-  let peer = null;
-  let dataConn = null;
-  let camConn = null;
+  let ws = null;
+  let pc = null;
   let localStream = null;
-  let activeCall = null;
   let connected = false;
   let streaming = false;
-  let usingPhoneCamera = false;
-  let desktopPeerId = null;
+  let captureReady = false;
   let currentCode = '';
   let codeExpiresAt = 0;
   let timerInterval = null;
-  let rotationTimeout = null;
-  let registering = false;
-  let reconnectTimer = null;
 
   function setStatus(kind, text) {
     els.status.className = `status ${kind}`;
@@ -45,282 +37,161 @@
     const remaining = Math.max(0, Math.ceil((codeExpiresAt - Date.now()) / 1000));
     els.codeTimer.textContent = connected
       ? 'Session active'
-      : remaining > 0
-        ? `Code expires in ${remaining}s`
-        : 'Updating code…';
+      : remaining > 0 ? `Code expires in ${remaining}s` : 'Updating code…';
   }
 
-  function showCode(code) {
+  function showCode(code, expiresIn) {
     currentCode = code;
     els.pairCode.textContent = code;
-    codeExpiresAt = Date.now() + ROTATION_MS;
+    codeExpiresAt = Date.now() + (expiresIn || 180000);
     updateTimer();
-    if (!timerInterval) {
-      timerInterval = setInterval(updateTimer, 1000);
-    }
+    if (!timerInterval) timerInterval = setInterval(updateTimer, 1000);
   }
 
-  function phoneCaptureHint() {
-    return `Open ${CAPTURE_PAGE} on your phone with code ${currentCode}, then tap Live Stream here.`;
-  }
-
-  function attachPeerListeners() {
-    peer.on('connection', (conn) => {
-      dataConn = conn;
-
-      conn.on('open', () => {
-        showConnected();
-      });
-
-      conn.on('data', (msg) => {
-        if (msg?.type === 'hello' && msg.peerId) {
-          desktopPeerId = msg.peerId;
-        } else if (msg?.type === 'stream-started' && usingPhoneCamera) {
-          streaming = true;
-          els.streamBtn.textContent = 'Stop Stream';
-          els.streamBtn.classList.add('active');
-          els.streamHint.textContent = 'Casting to desktop viewer…';
-        } else if (msg?.type === 'stop-stream' && usingPhoneCamera) {
-          stopStream(false);
-        }
-      });
-
-      conn.on('close', () => {
-        if (connected) showPairing();
-      });
-    });
-
-    peer.on('disconnected', () => {
-      if (connected) return;
-      setStatus('error', 'Reconnecting…');
-      scheduleReconnect(currentCode);
-    });
-
-    peer.on('close', () => {
-      if (!connected && currentCode) {
-        scheduleReconnect(currentCode);
-      }
-    });
-
-    peer.on('error', (err) => {
-      if (err.type === 'unavailable-id') {
-        registerCode(CasterSignaling.generateCode());
-        return;
-      }
-      console.error('[caster] peer error:', err);
-      if (!connected && currentCode) {
-        setStatus('error', 'Network error — reconnecting…');
-        scheduleReconnect(currentCode);
-      }
-    });
-  }
-
-  function scheduleReconnect(code) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(() => {
-      if (!connected && code) registerCode(code, true);
-    }, 1500);
+  function phoneHint() {
+    return `Open ${CAPTURE_PAGE}?code=${currentCode} on your phone, then tap Live Stream.`;
   }
 
   function showConnected() {
     connected = true;
-    clearTimeout(rotationTimeout);
-    clearTimeout(reconnectTimer);
     els.pairingView.classList.add('hidden');
     els.connectedView.classList.remove('hidden');
     els.connectedLabel.textContent = 'Connected';
     els.sessionCode.textContent = currentCode;
+    els.streamHint.textContent = phoneHint();
     setStatus('connected', 'Linked to desktop');
-    updateTimer();
-    els.streamHint.textContent = phoneCaptureHint();
     els.streamBtn.focus();
   }
 
   function showPairing() {
     connected = false;
     streaming = false;
-    usingPhoneCamera = false;
-    desktopPeerId = null;
+    captureReady = false;
     stopStream(false);
-    camConn?.close();
-    camConn = null;
-    dataConn = null;
     els.connectedView.classList.add('hidden');
     els.pairingView.classList.remove('hidden');
     els.streamBtn.textContent = 'Live Stream';
     els.streamBtn.classList.remove('active');
-    els.streamHint.textContent = 'Cast your view to the desktop viewer.';
-    if (currentCode) {
-      registerCode(currentCode, true);
-    } else {
-      registerCode(CasterSignaling.generateCode());
+    setStatus('waiting', 'Waiting for pairing');
+  }
+
+  function handleMessage(msg) {
+    switch (msg.type) {
+      case 'registered':
+      case 'session':
+        if (msg.code) showCode(msg.code, msg.expiresIn);
+        if (msg.paired) showConnected();
+        else setStatus('waiting', 'Ready — enter this code on desktop');
+        break;
+      case 'paired':
+        showConnected();
+        break;
+      case 'disconnected':
+        showPairing();
+        break;
+      case 'capture-ready':
+        captureReady = true;
+        if (connected) els.streamHint.textContent = 'Phone camera ready. Tap Live Stream.';
+        break;
+      case 'capture-offline':
+        captureReady = false;
+        if (connected) els.streamHint.textContent = phoneHint();
+        break;
+      case 'start-stream':
+        startStream(msg.source || 'local');
+        break;
+      case 'stop-stream':
+        stopStream(false);
+        break;
+      case 'answer':
+        if (pc && msg.answer) pc.setRemoteDescription(new RTCSessionDescription(msg.answer)).catch(console.error);
+        break;
+      case 'ice-candidate':
+        if (pc && msg.candidate) pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(console.error);
+        break;
+      case 'error':
+        console.error('[caster]', msg.message);
+        break;
     }
   }
 
-  function destroyPeer() {
-    peer?.destroy();
-    peer = null;
+  function connect() {
+    CasterSignaling.wakeServer();
+    ws = CasterSignaling.createSignalingConnection(handleMessage, () => {
+      if (!connected) {
+        setStatus('error', 'Reconnecting…');
+        setTimeout(connect, 2000);
+      }
+    });
+    ws.addEventListener('open', () => {
+      CasterSignaling.send(ws, { type: 'register-glasses' });
+    });
   }
 
-  function scheduleRotation() {
-    clearTimeout(rotationTimeout);
-    if (connected) return;
-    rotationTimeout = setTimeout(() => {
-      if (!connected) registerCode(CasterSignaling.generateCode());
-    }, ROTATION_MS);
-  }
-
-  async function registerCode(code, keepCodeVisible = false) {
-    if (connected || registering) return;
-    registering = true;
-    clearTimeout(reconnectTimer);
-
-    if (!keepCodeVisible) {
-      els.pairCode.textContent = '······';
-      els.codeTimer.textContent = 'Connecting to network…';
-      setStatus('waiting', 'Starting…');
-    } else {
-      setStatus('waiting', 'Reconnecting…');
-    }
-
-    destroyPeer();
-
-    try {
-      peer = await CasterSignaling.createPeerWithFallback(CasterSignaling.peerIdForCode(code));
-      attachPeerListeners();
-      showCode(code);
-      setStatus('waiting', 'Ready — enter this code on desktop');
-      scheduleRotation();
-    } catch (err) {
-      console.error('[caster] register failed:', err);
-      els.codeTimer.textContent = err.message || 'Retrying…';
-      setStatus('error', 'Retrying…');
-      scheduleReconnect(code);
-    } finally {
-      registering = false;
-    }
-  }
-
-  async function streamFromLocalCamera() {
+  async function streamLocal() {
     localStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: false,
     });
-
-    activeCall = peer.call(desktopPeerId, localStream);
-    activeCall.on('close', () => {
-      if (streaming && !usingPhoneCamera) toggleStream();
-    });
-
-    usingPhoneCamera = false;
+    pc = CasterSignaling.createPeerConnection(null, (c) => CasterSignaling.send(ws, { type: 'ice-candidate', candidate: c }));
+    localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    CasterSignaling.send(ws, { type: 'offer', offer: pc.localDescription });
     streaming = true;
     els.streamBtn.textContent = 'Stop Stream';
     els.streamBtn.classList.add('active');
-    els.streamHint.textContent = 'Casting to desktop viewer…';
-    CasterSignaling.sendData(dataConn, { type: 'stream-started' });
-  }
-
-  async function streamFromPhone() {
-    usingPhoneCamera = true;
-    els.streamHint.textContent = 'Starting phone camera…';
-
-    camConn?.close();
-    camConn = peer.connect(CasterSignaling.camPeerIdForCode(currentCode), { reliable: true });
-
-    try {
-      await CasterSignaling.waitForConnection(camConn, 10000);
-    } catch {
-      usingPhoneCamera = false;
-      els.streamHint.textContent = phoneCaptureHint();
-      throw new Error('Phone camera not ready.');
-    }
-
-    camConn.on('data', (msg) => {
-      if (msg?.type === 'stream-started') {
-        streaming = true;
-        els.streamBtn.textContent = 'Stop Stream';
-        els.streamBtn.classList.add('active');
-        els.streamHint.textContent = 'Casting to desktop viewer…';
-        CasterSignaling.sendData(dataConn, { type: 'stream-started' });
-      } else if (msg?.type === 'stream-error') {
-        usingPhoneCamera = false;
-        els.streamHint.textContent = msg.message || phoneCaptureHint();
-      }
-    });
-
-    camConn.on('close', () => {
-      if (streaming && usingPhoneCamera) stopStream(true);
-    });
-
-    CasterSignaling.sendData(camConn, { type: 'start-stream', desktopPeerId });
+    els.streamHint.textContent = 'Casting to desktop…';
+    CasterSignaling.send(ws, { type: 'stream-started' });
   }
 
   async function startStream() {
-    if (!desktopPeerId || !peer) {
-      els.streamHint.textContent = 'Desktop not ready yet. Reconnect from the viewer page.';
-      return;
-    }
-
     stopStream(false);
-
     try {
       if (CasterSignaling.hasCameraSupport()) {
         try {
-          await streamFromLocalCamera();
+          await streamLocal();
           return;
         } catch (err) {
-          console.warn('[caster] local camera failed, using phone relay:', err);
+          console.warn('[caster] local camera unavailable:', err);
         }
       }
-      await streamFromPhone();
+      if (!captureReady) {
+        els.streamHint.textContent = phoneHint();
+        return;
+      }
+      CasterSignaling.send(ws, { type: 'start-stream', source: 'capture' });
+      streaming = true;
+      els.streamBtn.textContent = 'Stop Stream';
+      els.streamBtn.classList.add('active');
+      els.streamHint.textContent = 'Starting phone camera…';
     } catch (err) {
       console.error('[caster] stream failed:', err);
-      usingPhoneCamera = false;
-      streaming = false;
-      els.streamBtn.textContent = 'Live Stream';
-      els.streamBtn.classList.remove('active');
-      els.streamHint.textContent = phoneCaptureHint();
-      CasterSignaling.sendData(dataConn, { type: 'stop-stream' });
+      els.streamHint.textContent = phoneHint();
     }
   }
 
-  function stopStream(notifyDesktop = true) {
-    activeCall?.close();
-    activeCall = null;
+  function stopStream(notify) {
     localStream?.getTracks().forEach((t) => t.stop());
     localStream = null;
-
-    if (usingPhoneCamera && camConn?.open) {
-      CasterSignaling.sendData(camConn, { type: 'stop-stream' });
-    }
-    camConn?.close();
-    camConn = null;
-
-    if (streaming || usingPhoneCamera) {
+    pc?.close();
+    pc = null;
+    if (streaming) {
       streaming = false;
-      usingPhoneCamera = false;
       els.streamBtn.textContent = 'Live Stream';
       els.streamBtn.classList.remove('active');
-      els.streamHint.textContent = phoneCaptureHint();
-      if (notifyDesktop) {
-        CasterSignaling.sendData(dataConn, { type: 'stop-stream' });
-      }
+      els.streamHint.textContent = connected ? phoneHint() : 'Cast your view to the desktop viewer.';
+      if (notify !== false) CasterSignaling.send(ws, { type: 'stop-stream' });
     }
   }
 
   function toggleStream() {
     if (!connected) return;
-    if (streaming) {
-      stopStream(true);
-    } else {
-      startStream();
-    }
+    streaming ? stopStream(true) : startStream();
   }
 
   els.streamBtn.addEventListener('click', toggleStream);
-  els.streamBtn.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') toggleStream();
-  });
+  els.streamBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter') toggleStream(); });
 
-  registerCode(CasterSignaling.generateCode());
+  connect();
 })();

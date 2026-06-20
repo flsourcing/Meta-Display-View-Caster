@@ -1,5 +1,5 @@
 /**
- * Desktop viewer — enter pairing code, connect, receive live stream from glasses
+ * Desktop viewer — enter code, connect, receive live stream
  */
 
 (function () {
@@ -17,12 +17,10 @@
     captureHint: document.getElementById('capture-hint'),
   };
 
-  let peer = null;
-  let dataConn = null;
-  let activeCall = null;
+  let ws = null;
+  let pc = null;
   let connected = false;
   let connecting = false;
-  let streaming = false;
 
   function setStatus(kind, text) {
     els.status.className = `status ${kind}`;
@@ -43,32 +41,24 @@
     els.connectSection.classList.add('hidden');
     els.viewerSection.classList.remove('hidden');
     setStatus('connected', 'Connected to glasses');
-    setViewerStatus('connected', 'Connected — open capture.html on phone, then tap Live Stream on glasses');
-    const captureUrl = `capture.html?code=${code}`;
-    els.captureHint.innerHTML = `Open <a href="${captureUrl}">capture.html</a> on your phone with code <strong>${code}</strong>, then tap Live Stream on glasses.`;
+    setViewerStatus('connected', 'Connected — open capture.html on phone, tap Live Stream on glasses');
+    els.captureHint.innerHTML = `Open <a href="capture.html?code=${code}">capture.html</a> on your phone with code <strong>${code}</strong>, then tap Live Stream on glasses.`;
   }
 
   function cleanupCall() {
-    activeCall?.close();
-    activeCall = null;
+    pc?.close();
+    pc = null;
     els.remoteVideo.srcObject = null;
     els.videoPlaceholder.classList.remove('hidden');
-    els.videoPlaceholder.textContent = 'Waiting for Live Stream from glasses…';
-    streaming = false;
-    if (connected) {
-      setViewerStatus('connected', 'Connected — tap Live Stream on glasses');
-    }
+    if (connected) setViewerStatus('connected', 'Connected — tap Live Stream on glasses');
   }
 
   function resetToConnect() {
     connected = false;
     connecting = false;
-    streaming = false;
     cleanupCall();
-    dataConn?.close();
-    dataConn = null;
-    peer?.destroy();
-    peer = null;
+    ws?.close();
+    ws = null;
     els.viewerSection.classList.add('hidden');
     els.connectSection.classList.remove('hidden');
     els.connectBtn.disabled = false;
@@ -76,67 +66,62 @@
     showError('');
   }
 
-  function setupPeerHandlers() {
-    peer.on('call', (call) => {
-      activeCall = call;
-      call.answer();
-      call.on('stream', (stream) => {
-        streaming = true;
-        els.remoteVideo.srcObject = stream;
-        els.videoPlaceholder.classList.add('hidden');
-        setViewerStatus('connected', 'Live stream active');
-      });
-      call.on('close', cleanupCall);
-    });
-
-    peer.on('disconnected', () => {
-      if (connected) showError('Connection lost. Try reconnecting.');
-    });
-
-    peer.on('close', () => {
-      if (connected) resetToConnect();
-    });
+  function ensurePc() {
+    if (pc) return pc;
+    pc = CasterSignaling.createPeerConnection(
+      (e) => {
+        if (e.streams?.[0]) {
+          els.remoteVideo.srcObject = e.streams[0];
+          els.videoPlaceholder.classList.add('hidden');
+          setViewerStatus('connected', 'Live stream active');
+        }
+      },
+      (c) => CasterSignaling.send(ws, { type: 'ice-candidate', candidate: c }),
+    );
+    return pc;
   }
 
-  async function tryConnect(code, attempt) {
-    const glassesPeerId = CasterSignaling.peerIdForCode(code);
-
-    peer?.destroy();
-    peer = null;
-    dataConn = null;
-
-    peer = await CasterSignaling.createPeerWithFallback();
-    setupPeerHandlers();
-
-    setStatus('waiting', attempt > 1 ? `Finding glasses… (attempt ${attempt})` : 'Finding glasses…');
-
-    dataConn = peer.connect(glassesPeerId, { reliable: true });
-    await CasterSignaling.waitForConnection(dataConn);
-
-    dataConn.on('data', (msg) => {
-      if (msg?.type === 'stream-started') {
-        setViewerStatus('connected', 'Receiving live stream…');
-      } else if (msg?.type === 'stop-stream') {
-        cleanupCall();
-      }
-    });
-
-    dataConn.on('close', () => {
-      if (connected) {
-        showError('Glasses disconnected.');
+  function handleMessage(msg) {
+    switch (msg.type) {
+      case 'paired':
+        connected = true;
+        connecting = false;
+        showViewer(msg.code || els.codeInput.value);
+        showError('');
+        break;
+      case 'error':
+        if (connecting) throw new Error(msg.message);
+        showError(msg.message);
+        break;
+      case 'disconnected':
+        showError(msg.message || 'Disconnected.');
         resetToConnect();
-      }
-    });
+        break;
+      case 'offer':
+        handleOffer(msg.offer);
+        break;
+      case 'stream-started':
+        setViewerStatus('connected', 'Receiving live stream…');
+        break;
+      case 'stop-stream':
+        cleanupCall();
+        break;
+      case 'ice-candidate':
+        if (pc && msg.candidate) pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(console.error);
+        break;
+    }
+  }
 
-    CasterSignaling.sendData(dataConn, { type: 'hello', peerId: peer.id });
-    connected = true;
-    showViewer(code);
-    showError('');
+  async function handleOffer(offer) {
+    const peer = ensurePc();
+    await peer.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await peer.createAnswer();
+    await peer.setLocalDescription(answer);
+    CasterSignaling.send(ws, { type: 'answer', answer: peer.localDescription });
   }
 
   async function connect() {
     if (connecting) return;
-
     const code = els.codeInput.value.replace(/\D/g, '').slice(0, 6);
     if (code.length !== 6) {
       showError('Enter the 6-digit code shown on your glasses.');
@@ -146,42 +131,37 @@
     showError('');
     connecting = true;
     els.connectBtn.disabled = true;
-    setStatus('waiting', 'Joining network…');
+    setStatus('waiting', 'Waking server…');
 
-    const maxAttempts = 3;
-    let lastError;
+    try {
+      await CasterSignaling.wakeServer();
+      setStatus('waiting', 'Connecting…');
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      try {
-        await tryConnect(code, attempt);
-        connecting = false;
-        return;
-      } catch (err) {
-        lastError = err;
-        console.warn(`[caster] connect attempt ${attempt} failed:`, err);
-        if (attempt < maxAttempts) {
-          setStatus('waiting', `Retrying… (${attempt + 1}/${maxAttempts})`);
-          await new Promise((r) => setTimeout(r, 2000));
-        }
-      }
+      ws = CasterSignaling.createSignalingConnection(handleMessage, () => {
+        if (connected) resetToConnect();
+      });
+
+      await CasterSignaling.waitForOpen(ws);
+      CasterSignaling.send(ws, { type: 'pair', code });
+
+      const paired = await CasterSignaling.waitForMessage(ws, 'paired');
+      connected = true;
+      connecting = false;
+      showViewer(paired.code || code);
+      showError('');
+    } catch (err) {
+      console.error('[caster] connect failed:', err);
+      connecting = false;
+      showError(err.message || 'Could not connect. Wait for "Ready" on glasses, then enter the current code.');
+      els.connectBtn.disabled = false;
+      setStatus('waiting', 'Enter code from glasses');
+      ws?.close();
+      ws = null;
     }
-
-    connecting = false;
-    showError(
-      lastError?.message
-        || 'Could not connect. On glasses, wait for "Ready — enter this code on desktop", then enter the code shown right now.',
-    );
-    els.connectBtn.disabled = false;
-    setStatus('waiting', 'Enter code from glasses');
-    peer?.destroy();
-    peer = null;
-    dataConn = null;
   }
 
   els.connectBtn.addEventListener('click', connect);
-  els.codeInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') connect();
-  });
+  els.codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); });
   els.codeInput.addEventListener('input', () => {
     els.codeInput.value = els.codeInput.value.replace(/\D/g, '').slice(0, 6);
   });

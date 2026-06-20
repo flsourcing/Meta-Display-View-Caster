@@ -1,6 +1,6 @@
 # Meta Display View Caster
 
-Cast the live view from your Meta Display glasses to a desktop browser. Everything runs from **GitHub Pages** — no backend server to deploy.
+Cast the live view from your Meta Display glasses to a desktop browser.
 
 ## Live site
 
@@ -10,30 +10,30 @@ Cast the live view from your Meta Display glasses to a desktop browser. Everythi
 | Glasses app | https://flsourcing.github.io/Meta-Display-View-Caster/glasses.html | Meta Display glasses |
 | Phone camera | https://flsourcing.github.io/Meta-Display-View-Caster/capture.html | iPhone / Android |
 
-## How it works
+## One-time setup: deploy the signaling server
 
-1. **Glasses** — Open `glasses.html`. A 6-digit code appears and refreshes every 60 seconds.
-2. **Desktop** — Open the viewer, enter the code, click **Connect**. Both show **Connected**.
-3. **Phone** — Open `capture.html` on your phone and enter the **same code**. Keep the page open.
-4. **Glasses** — Tap **Live Stream** at the bottom. The phone camera streams to the desktop viewer.
+GitHub Pages serves the UI only. Pairing requires a small WebSocket server (free on Render):
 
-Pairing and streaming use [PeerJS](https://peerjs.com) in the browser — all client-side on GitHub Pages.
+1. Go to [render.com](https://render.com) and sign in with GitHub.
+2. Click **New → Blueprint** and connect repo `flsourcing/Meta-Display-View-Caster`.
+3. Render reads `render.yaml` and deploys the server automatically.
+4. Copy your service URL (e.g. `https://meta-display-view-caster.onrender.com`).
+5. Edit `docs/config.js` — set `SIGNALING_URL` to `wss://your-service.onrender.com` and push.
 
-## Why a phone is needed for camera
+The config already points to `wss://meta-display-view-caster.onrender.com` — if you name your Render service that, it works out of the box.
 
-Meta Ray-Ban Display [Web Apps do not support camera access](https://wearables.developer.meta.com/docs/develop/webapps/build). The glasses app handles pairing and the Live Stream button; your phone provides the camera via `capture.html`.
+> **Note:** Render free tier sleeps after inactivity. The app wakes it automatically — wait ~30 seconds on first connect.
 
-For true glasses-camera streaming (no phone), you would need the [Device Access Toolkit](https://wearables.developer.meta.com/docs/develop/dat/build-overview/) in a native mobile app.
+## How to use
 
-## Add to Meta Display glasses
+1. **Glasses** — open `glasses.html`, wait for **"Ready — enter this code on desktop"**
+2. **Desktop** — open the viewer, enter the code, click **Connect**
+3. **Phone** — open `capture.html?code=XXXXXX` (same code), tap **Join session**
+4. **Glasses** — tap **Live Stream**
 
-1. Enable **Developer Mode** in the Meta AI app (tap the app version in Settings).
-2. Go to **Display Glasses → App connections → Web apps → Add a web app**.
-3. Enter: `https://flsourcing.github.io/Meta-Display-View-Caster/glasses.html`
+## Meta Display camera note
 
-## Development
-
-Push to `main` and GitHub Actions deploys the `docs/` folder automatically.
+[Glasses web apps cannot access the camera](https://wearables.developer.meta.com/docs/develop/webapps/build). Use `capture.html` on your phone for the video feed.
 
 ## License
 
