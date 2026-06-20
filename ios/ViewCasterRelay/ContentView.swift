@@ -226,7 +226,7 @@ struct ContentView: View {
                             .multilineTextAlignment(.center)
                     }
 
-                    TextField("Signaling server (wss://…)", text: $model.serverURLString))
+                    TextField("Signaling server (wss://…)", text: $model.serverURLString)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .padding()
