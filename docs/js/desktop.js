@@ -152,7 +152,10 @@
     } catch (err) {
       console.error('[caster] connect failed:', err);
       connecting = false;
-      showError(err.message || 'Could not connect. Wait for "Ready" on glasses, then enter the current code.');
+      const msg = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')
+        ? 'Signaling server not reachable. Deploy it on Render (see GitHub README), wait 1 minute, then try again.'
+        : (err.message || 'Could not connect. Wait for "Ready" on glasses, then enter the current code.');
+      showError(msg);
       els.connectBtn.disabled = false;
       setStatus('waiting', 'Enter code from glasses');
       ws?.close();

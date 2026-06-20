@@ -15,11 +15,9 @@ function getHttpUrl() {
 }
 
 async function wakeServer() {
-  try {
-    await fetch(`${getHttpUrl()}/health`, { cache: 'no-store' });
-  } catch {
-    // Server may be waking up on Render free tier
-  }
+  const res = await fetch(`${getHttpUrl()}/health`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Signaling server is not running. Deploy it on Render first (see README).');
+  return res.json();
 }
 
 function createSignalingConnection(onMessage, onClose) {
