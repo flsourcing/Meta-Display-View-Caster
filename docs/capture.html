@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>View Caster — Phone Camera</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📱</text></svg>">
+  <link rel="stylesheet" href="css/style.css?v=5">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Phone Camera</h1>
+      <p>Use your phone camera to stream to the desktop viewer. Meta Display glasses cannot access the camera directly.</p>
+    </header>
+
+    <div class="card">
+      <label for="code-input">Same code as glasses</label>
+      <input
+        id="code-input"
+        type="text"
+        inputmode="numeric"
+        autocomplete="one-time-code"
+        maxlength="6"
+        placeholder="000000"
+        aria-label="6-digit pairing code from glasses"
+      >
+      <button id="connect-btn" class="btn btn-primary" type="button">Join session</button>
+      <p id="error-msg" class="message" role="alert"></p>
+    </div>
+
+    <div id="ready-view" class="card hidden" style="margin-top: 1rem;">
+      <p class="code-timer" style="margin-bottom: 0.5rem;">Session code</p>
+      <p id="code-display" style="font-family: var(--mono); font-size: 2rem; letter-spacing: 0.2em; text-align: center; margin: 0.5rem 0 1rem;">------</p>
+      <p class="message">Keep this page open. On your glasses, tap <strong>Live Stream</strong> to start casting.</p>
+    </div>
+
+    <div class="card" style="margin-top: 1rem;">
+      <div id="status" class="status waiting">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="status-text">Enter code from glasses</span>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <a href="glasses.html">Glasses</a> · <a href="./">Desktop viewer</a>
+  </footer>
+
+  <script src="js/peerjs.min.js?v=5"></script>
+  <script src="config.js?v=5"></script>
+  <script src="js/signaling.js?v=5"></script>
+  <script src="js/capture.js?v=5"></script>
+</body>
+</html>

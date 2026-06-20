@@ -2,7 +2,7 @@
  * Client-side pairing + WebRTC via PeerJS (no custom server — works on GitHub Pages).
  */
 
-const APP_VERSION = '3';
+const APP_VERSION = '5';
 
 function generateCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -11,6 +11,15 @@ function generateCode() {
 function peerIdForCode(code) {
   const prefix = window.CASTER_CONFIG?.PEER_PREFIX || 'mdvc-';
   return `${prefix}${code}`;
+}
+
+function camPeerIdForCode(code) {
+  const prefix = window.CASTER_CONFIG?.CAM_PREFIX || 'mdvc-cam-';
+  return `${prefix}${code}`;
+}
+
+function hasCameraSupport() {
+  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 }
 
 function createPeerOptions(id) {
@@ -98,6 +107,8 @@ window.CasterSignaling = {
   APP_VERSION,
   generateCode,
   peerIdForCode,
+  camPeerIdForCode,
+  hasCameraSupport,
   createPeerOptions,
   createPeer,
   withTimeout,

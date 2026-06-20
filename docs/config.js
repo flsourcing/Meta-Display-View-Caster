@@ -3,6 +3,7 @@
  */
 window.CASTER_CONFIG = {
   PEER_PREFIX: 'mdvc-',
+  CAM_PREFIX: 'mdvc-cam-',
   CODE_ROTATION_MS: 60_000,
 
   // PeerJS public cloud (handles pairing signaling in the browser)

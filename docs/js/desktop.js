@@ -14,6 +14,7 @@
     remoteVideo: document.getElementById('remote-video'),
     videoPlaceholder: document.getElementById('video-placeholder'),
     statusViewer: document.getElementById('status-viewer'),
+    captureHint: document.getElementById('capture-hint'),
   };
 
   let peer = null;
@@ -38,11 +39,13 @@
     els.errorMsg.classList.toggle('error', !!msg);
   }
 
-  function showViewer() {
+  function showViewer(code) {
     els.connectSection.classList.add('hidden');
     els.viewerSection.classList.remove('hidden');
     setStatus('connected', 'Connected to glasses');
-    setViewerStatus('connected', 'Connected — tap Live Stream on glasses');
+    setViewerStatus('connected', 'Connected — open capture.html on phone, then tap Live Stream on glasses');
+    const captureUrl = `capture.html?code=${code}`;
+    els.captureHint.innerHTML = `Open <a href="${captureUrl}">capture.html</a> on your phone with code <strong>${code}</strong>, then tap Live Stream on glasses.`;
   }
 
   function cleanupCall() {
@@ -139,7 +142,7 @@
       CasterSignaling.sendData(dataConn, { type: 'hello', peerId: peer.id });
       connected = true;
       connecting = false;
-      showViewer();
+      showViewer(code);
       showError('');
     } catch (err) {
       console.error('[caster] connect failed:', err);
