@@ -21,7 +21,7 @@
   let activeCall = null;
   let streaming = false;
   let connected = false;
-  let glassesPeerId = null;
+  let connecting = false;
 
   function setStatus(kind, text) {
     els.status.className = `status ${kind}`;
@@ -48,13 +48,13 @@
 
   function resetToConnect() {
     connected = false;
+    connecting = false;
     streaming = false;
     cleanupCall();
     dataConn?.close();
     dataConn = null;
     peer?.destroy();
     peer = null;
-    glassesPeerId = null;
     els.viewerSection.classList.add('hidden');
     els.connectSection.classList.remove('hidden');
     els.streamBtn.textContent = 'Live Stream';
@@ -74,16 +74,12 @@
         els.videoPlaceholder.classList.add('hidden');
       });
       call.on('close', () => {
-        if (streaming) {
-          cleanupCall();
-        }
+        if (streaming) cleanupCall();
       });
     });
 
     peer.on('disconnected', () => {
-      if (connected) {
-        showError('Connection lost. Reconnecting…');
-      }
+      if (connected) showError('Connection lost. Try reconnecting.');
     });
 
     peer.on('close', () => {
@@ -92,6 +88,8 @@
   }
 
   async function connect() {
+    if (connecting) return;
+
     const code = els.codeInput.value.replace(/\D/g, '').slice(0, 6);
     if (code.length !== 6) {
       showError('Enter the 6-digit code shown on your glasses.');
@@ -99,15 +97,18 @@
     }
 
     showError('');
+    connecting = true;
     els.connectBtn.disabled = true;
-    setStatus('waiting', 'Connecting…');
+    setStatus('waiting', 'Joining network…');
 
-    glassesPeerId = CasterSignaling.peerIdForCode(code);
+    const glassesPeerId = CasterSignaling.peerIdForCode(code);
 
     try {
-      peer = new Peer(CasterSignaling.createPeerOptions());
+      peer = CasterSignaling.createPeer();
       setupPeerHandlers();
+
       await CasterSignaling.waitForPeerOpen(peer);
+      setStatus('waiting', 'Finding glasses…');
 
       dataConn = peer.connect(glassesPeerId, { reliable: true });
       await CasterSignaling.waitForConnection(dataConn);
@@ -130,11 +131,13 @@
 
       CasterSignaling.sendData(dataConn, { type: 'hello', peerId: peer.id });
       connected = true;
+      connecting = false;
       showViewer();
       showError('');
     } catch (err) {
       console.error('[caster] connect failed:', err);
-      showError('Could not connect. Check the code on your glasses and try again.');
+      connecting = false;
+      showError(err.message || 'Could not connect. Use the current code from glasses.html and try again.');
       els.connectBtn.disabled = false;
       setStatus('waiting', 'Enter code from glasses');
       peer?.destroy();

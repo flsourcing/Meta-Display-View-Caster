@@ -2,15 +2,22 @@
  * Meta Display View Caster — client-side config (GitHub Pages only, no backend).
  */
 window.CASTER_CONFIG = {
-  // Prefix for PeerJS room IDs (keeps IDs unique on the public PeerJS cloud)
   PEER_PREFIX: 'mdvc-',
-
-  // Pairing code rotates every 60 seconds for privacy
   CODE_ROTATION_MS: 60_000,
 
-  // STUN servers for WebRTC NAT traversal
+  // PeerJS public cloud (handles pairing signaling in the browser)
+  PEER_HOST: '0.peerjs.com',
+  PEER_PORT: 443,
+  PEER_PATH: '/',
+  PEER_SECURE: true,
+
   ICE_SERVERS: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
   ],
 };

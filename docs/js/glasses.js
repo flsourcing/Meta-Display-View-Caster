@@ -25,6 +25,7 @@
   let codeExpiresAt = 0;
   let timerInterval = null;
   let rotationTimeout = null;
+  let starting = false;
 
   function setStatus(kind, text) {
     els.status.className = `status ${kind}`;
@@ -52,6 +53,7 @@
 
   function showConnected() {
     connected = true;
+    clearTimeout(rotationTimeout);
     els.pairingView.classList.add('hidden');
     els.connectedView.classList.remove('hidden');
     els.connectedLabel.textContent = 'Connected';
@@ -83,20 +85,22 @@
   }
 
   async function startPairingSession() {
-    if (connected) return;
+    if (connected || starting) return;
+    starting = true;
 
     destroyPeer();
     const code = CasterSignaling.generateCode();
-    showCode(code);
+    els.pairCode.textContent = '······';
+    els.codeTimer.textContent = 'Connecting to network…';
+    setStatus('waiting', 'Starting…');
 
     try {
-      peer = new Peer(CasterSignaling.peerIdForCode(code), CasterSignaling.createPeerOptions());
+      peer = CasterSignaling.createPeer(CasterSignaling.peerIdForCode(code));
 
       peer.on('connection', (conn) => {
         dataConn = conn;
         conn.on('open', () => {
           showConnected();
-          clearTimeout(rotationTimeout);
         });
 
         conn.on('data', async (msg) => {
@@ -112,21 +116,36 @@
         });
       });
 
+      peer.on('disconnected', () => {
+        if (!connected) {
+          setStatus('error', 'Reconnecting…');
+        }
+      });
+
       peer.on('error', (err) => {
         if (err.type === 'unavailable-id') {
+          starting = false;
           startPairingSession();
           return;
         }
         console.error('[caster] peer error:', err);
+        if (!connected) {
+          setStatus('error', 'Network error — retrying…');
+          setTimeout(startPairingSession, 2000);
+        }
       });
 
       await CasterSignaling.waitForPeerOpen(peer);
+      showCode(code);
       setStatus('waiting', 'Waiting for pairing');
       scheduleRotation();
     } catch (err) {
       console.error('[caster] pairing session failed:', err);
+      els.codeTimer.textContent = err.message || 'Retrying…';
       setStatus('error', 'Retrying…');
       setTimeout(startPairingSession, 2000);
+    } finally {
+      starting = false;
     }
   }
 
