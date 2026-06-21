@@ -27,7 +27,7 @@
   let reconnectTimer = null;
 
   if (els.versionLabel) {
-    els.versionLabel.textContent = useWS ? 'auto-v40' : `v${CasterSignaling.APP_VERSION}`;
+    els.versionLabel.textContent = useWS ? 'auto-v42' : `v${CasterSignaling.APP_VERSION}`;
   }
 
   function setStatus(kind, text) {
@@ -107,6 +107,13 @@
     ws.addEventListener('message', (ev) => {
       let msg;
       try { msg = JSON.parse(ev.data); } catch { return; }
+      if (msg?.type === 'error') {
+        const errText = msg.message || 'Connection error';
+        if (!errText.includes('Unknown')) {
+          els.streamHint.textContent = errText;
+          setStatus('error', errText);
+        }
+      }
       if (msg?.type === 'stream-starting') {
         els.streamHint.textContent = 'Phone is turning on glasses camera…';
         setStatus('waiting', 'Starting camera…');

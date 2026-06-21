@@ -251,12 +251,30 @@ function notifyRelayOfAllViewers(session) {
 
 function joinError(session, code) {
   if (!session) {
-    return 'Code not found. Open the phone app, wait for a 6-digit code, then enter it here.';
+    return 'Phone relay offline — open View Caster on your phone first.';
   }
   if (session.code !== code) {
     return 'Code expired. Check the phone app for the current 6-digit code.';
   }
   return null;
+}
+
+function attachGlassesToSession(ws, session) {
+  session.glassesWs = ws;
+  const sessionId = session.sessionId;
+  ws.castSessionId = sessionId;
+  ws.castRole = 'glasses';
+  send(ws, { type: 'relay-ack', role: 'glasses', ...sessionPayload(session) });
+  if (session.relayWs) {
+    send(session.relayWs, { type: 'glasses-joined', ...sessionPayload(session) });
+  }
+  for (const viewer of session.viewers.values()) {
+    send(viewerSocket(viewer), { type: 'glasses-joined', ...sessionPayload(session) });
+  }
+  if (session.desktopWs) {
+    send(session.desktopWs, { type: 'glasses-joined', ...sessionPayload(session) });
+  }
+  return sessionId;
 }
 
 function removeViewer(session, viewerId) {
@@ -278,6 +296,7 @@ app.get('/live-status', (_req, res) => {
     relayOnline: !!session?.relayWs,
     streaming: !!session?.streaming,
     viewerCount: session?.viewers.size ?? 0,
+    code: session?.relayWs && session?.code ? session.code : null,
   });
 });
 
@@ -347,54 +366,34 @@ wss.on('connection', (ws) => {
         break;
       }
 
-      case 'join-glasses-auto': {
-        role = 'glasses';
-        const session = findViewableSession();
-        if (!session?.relayWs) {
-          send(ws, {
-            type: 'error',
-            message: 'Phone relay offline — open View Caster on your phone first.',
-          });
-          return;
-        }
-        session.glassesWs = ws;
-        sessionId = session.sessionId;
-        ws.castSessionId = sessionId;
-        ws.castRole = role;
-        send(ws, { type: 'relay-ack', role: 'glasses', ...sessionPayload(session) });
-        if (session.relayWs) {
-          send(session.relayWs, { type: 'glasses-joined', ...sessionPayload(session) });
-        }
-        for (const viewer of session.viewers.values()) {
-          send(viewerSocket(viewer), { type: 'glasses-joined', ...sessionPayload(session) });
-        }
-        if (session.desktopWs) {
-          send(session.desktopWs, { type: 'glasses-joined', ...sessionPayload(session) });
-        }
-        break;
-      }
-
+      case 'join-glasses-auto':
       case 'join-glasses': {
         role = 'glasses';
-        const code = String(msg.code || '').replace(/\D/g, '').slice(0, 6);
-        const session = findSessionByCode(code);
-        const err = joinError(session, code);
-        if (err) {
-          send(ws, { type: 'error', message: err });
-          return;
+        const autoJoin = msg.type === 'join-glasses-auto'
+          || msg.auto === true
+          || String(msg.auto || '').toLowerCase() === 'true'
+          || String(msg.code || '').trim().toLowerCase() === 'auto'
+          || !String(msg.code || '').replace(/\D/g, '').trim();
+        let session = null;
+        if (autoJoin) {
+          session = findViewableSession();
+          if (!session?.relayWs) {
+            send(ws, {
+              type: 'error',
+              message: 'Phone relay offline — open View Caster on your phone first.',
+            });
+            return;
+          }
+        } else {
+          const code = String(msg.code || '').replace(/\D/g, '').slice(0, 6);
+          session = findSessionByCode(code);
+          const err = joinError(session, code);
+          if (err) {
+            send(ws, { type: 'error', message: err });
+            return;
+          }
         }
-        session.glassesWs = ws;
-        sessionId = session.sessionId;
-        send(ws, { type: 'relay-ack', role: 'glasses', ...sessionPayload(session) });
-        if (session.relayWs) {
-          send(session.relayWs, { type: 'glasses-joined', ...sessionPayload(session) });
-        }
-        for (const viewer of session.viewers.values()) {
-          send(viewerSocket(viewer), { type: 'glasses-joined', ...sessionPayload(session) });
-        }
-        if (session.desktopWs) {
-          send(session.desktopWs, { type: 'glasses-joined', ...sessionPayload(session) });
-        }
+        sessionId = attachGlassesToSession(ws, session);
         break;
       }
 

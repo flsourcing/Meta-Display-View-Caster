@@ -142,7 +142,7 @@ struct ContentView: View {
                 .font(.largeTitle.bold())
                 .foregroundStyle(.white)
 
-            Text("Phone relay — pair desktop & glasses, then go live from Meta Display.")
+            Text("Phone relay — keep View Caster open, then go live from glasses or here.")
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.7))
         }
@@ -278,7 +278,7 @@ struct ContentView: View {
                 .font(.headline)
                 .foregroundStyle(.green.opacity(0.9))
 
-            Text("Tap Get Started to open the pairing screen. Enter the code on glasses, then start Live Stream for video and audio.")
+            Text("Tap Get Started to open View Caster. On glasses, open the app and tap Live Stream — no code needed.")
                 .font(.body)
                 .foregroundStyle(.white.opacity(0.85))
 
