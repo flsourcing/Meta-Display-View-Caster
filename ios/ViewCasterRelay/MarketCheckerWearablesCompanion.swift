@@ -843,8 +843,6 @@ final class MarketCheckerWearablesCompanion: ObservableObject {
     }
 
     private func stopCameraStreamOnly() async {
-        captureWatchdogTask?.cancel()
-        captureWatchdogTask = nil
         stateToken = nil
         frameToken = nil
         photoToken = nil
@@ -1213,7 +1211,7 @@ final class MarketCheckerWearablesCompanion: ObservableObject {
         }
 
         let deadline = Date().addingTimeInterval(deviceTimeoutSeconds)
-        var lastError: Error = APIError(
+        var lastError: Error = WearablesCompanionError(
             message: "No DAT device detected. Keep Meta AI open and glasses connected, then retry."
         )
 
@@ -1288,7 +1286,7 @@ final class MarketCheckerWearablesCompanion: ObservableObject {
                 guard self.photoCaptureContinuation != nil else {
                     return
                 }
-                if let sample = sampleBufferFromJPEG(photoData.data) { self.onPhotoSampleBuffer?(sample) }
+                if let sample = self.sampleBufferFromJPEG(photoData.data) { self.onPhotoSampleBuffer?(sample) }
                 await self.tearDownGlassesCameraImmediately()
             }
         }
@@ -1351,7 +1349,7 @@ final class MarketCheckerWearablesCompanion: ObservableObject {
             try? await Task.sleep(nanoseconds: 250_000_000)
         }
 
-        throw APIError(
+        throw WearablesCompanionError(
             message: "Could not start camera stream. The glasses session connected but camera capability was not ready yet."
         )
     }
@@ -1456,25 +1454,24 @@ final class MarketCheckerWearablesCompanion: ObservableObject {
         Task { await tearDownGlassesCameraImmediately() }
     }
 
-
-private func sampleBufferFromJPEG(_ data: Data) -> CMSampleBuffer? {
-    guard let image = UIImage(data: data), let cgImage = image.cgImage else { return nil }
-    let width = cgImage.width
-    let height = cgImage.height
-    var pixelBuffer: CVPixelBuffer?
-    let attrs = [kCVPixelBufferCGImageCompatibilityKey: true, kCVPixelBufferCGBitmapContextCompatibilityKey: true] as CFDictionary
-    guard CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, attrs, &pixelBuffer) == kCVReturnSuccess, let buffer = pixelBuffer else { return nil }
-    CVPixelBufferLockBaseAddress(buffer, [])
-    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-    guard let context = CGContext(data: CVPixelBufferGetBaseAddress(buffer), width: width, height: height, bitsPerComponent: 8, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
-    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-    var format: CMVideoFormatDescription?
-    CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: buffer, formatDescriptionOut: &format)
-    guard let format else { return nil }
-    var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: .zero, decodeTimeStamp: .invalid)
-    var sampleBuffer: CMSampleBuffer?
-    CMSampleBufferCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: buffer, dataReady: true, makeDataReadyCallback: nil, refcon: nil, formatDescription: format, sampleTiming: &timing, sampleBufferOut: &sampleBuffer)
-    return sampleBuffer
+    private func sampleBufferFromJPEG(_ data: Data) -> CMSampleBuffer? {
+        guard let image = UIImage(data: data), let cgImage = image.cgImage else { return nil }
+        let width = cgImage.width
+        let height = cgImage.height
+        var pixelBuffer: CVPixelBuffer?
+        let attrs = [kCVPixelBufferCGImageCompatibilityKey: true, kCVPixelBufferCGBitmapContextCompatibilityKey: true] as CFDictionary
+        guard CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, attrs, &pixelBuffer) == kCVReturnSuccess, let buffer = pixelBuffer else { return nil }
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        guard let context = CGContext(data: CVPixelBufferGetBaseAddress(buffer), width: width, height: height, bitsPerComponent: 8, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        var format: CMVideoFormatDescription?
+        CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: buffer, formatDescriptionOut: &format)
+        guard let format else { return nil }
+        var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: .zero, decodeTimeStamp: .invalid)
+        var sampleBuffer: CMSampleBuffer?
+        CMSampleBufferCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: buffer, dataReady: true, makeDataReadyCallback: nil, refcon: nil, formatDescription: format, sampleTiming: &timing, sampleBufferOut: &sampleBuffer)
+        return sampleBuffer
+    }
 }
 
-}
