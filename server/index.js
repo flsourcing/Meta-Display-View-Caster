@@ -164,6 +164,29 @@ function pushChatMessage(session, payload) {
   }
 }
 
+function broadcastRelayOnlineToViewers(session) {
+  const payload = { type: 'relay-online', ...sessionPayload(session) };
+  for (const viewer of session.viewers.values()) {
+    send(viewerSocket(viewer), payload);
+  }
+}
+
+function notifyRelayOfAllViewers(session) {
+  if (!session.relayWs || !session.viewers.size) return;
+  const viewers = buildViewerList(session);
+  for (const [vid, viewer] of session.viewers.entries()) {
+    send(session.relayWs, {
+      type: 'viewer-joined',
+      viewerId: vid,
+      name: viewer.name,
+      status: viewer.status || (session.streaming ? 'watching' : 'waiting'),
+      viewerCount: session.viewers.size,
+      streaming: session.streaming,
+      viewers,
+    });
+  }
+}
+
 function joinError(session, code) {
   if (!session) {
     return 'Code not found. Open the phone app, wait for a 6-digit code, then enter it here.';
@@ -487,6 +510,10 @@ wss.on('connection', (ws) => {
           send(ws, { type: 'error', message: 'Not in a session.' });
           return;
         }
+        if (msg.type === 'stream-starting') {
+          broadcastRelayOnlineToViewers(session);
+          notifyRelayOfAllViewers(session);
+        }
         broadcast(session, msg, ws);
         break;
       }
@@ -497,6 +524,8 @@ wss.on('connection', (ws) => {
           session.streaming = true;
           setAllViewerStatuses(session, 'watching');
           broadcastViewerList(session);
+          broadcastRelayOnlineToViewers(session);
+          notifyRelayOfAllViewers(session);
         }
         const s = getSession(sessionId);
         if (!s) {

@@ -5208,6 +5208,8 @@ final class CompanionViewModel: ObservableObject {
                 beginDesktopStreamIfReady()
 
                 relaySignaling.sendSignal(type: "stream-started", payload: ["source": "glasses"])
+                beginDesktopStreamIfReady()
+
                 relaySignaling.status = "Live casting — tap Stop when done"
 
                 while !Task.isCancelled && isLiveCastActive && cameraStream != nil {
