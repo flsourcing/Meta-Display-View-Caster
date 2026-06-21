@@ -35,15 +35,33 @@ struct CastHomeView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 linkRow(
-                    title: "Desktop",
-                    linked: signaling.desktopLinked,
-                    hint: "Open desktop viewer → enter code → Connect"
-                )
-                linkRow(
                     title: "Glasses",
                     linked: signaling.glassesLinked,
-                    hint: "Enter code on glasses → Live Stream opens this app"
+                    hint: "Enter code on glasses → Live Stream"
                 )
+            }
+
+            if !signaling.viewerRoster.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Viewers")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+
+                    ForEach(signaling.viewerRoster) { viewer in
+                        HStack {
+                            Text(viewer.name)
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.9))
+                            Spacer()
+                            Text(viewer.statusLabel)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(viewer.isWatching ? .green : .orange)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                .padding(12)
+                .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
             }
 
             Button {
@@ -111,7 +129,7 @@ struct CastHomeView: View {
             }
             .buttonStyle(SecondaryButtonStyle())
 
-            Text("1. Tap Prepare Glasses (arms connection like image lookup)\n2. Keep View Caster open on phone\n3. Enter code on desktop & glasses\n4. Live Stream starts camera on phone → desktop gets video when connected\n5. Tap Stop Live Cast when done")
+            Text("1. Tap Prepare Glasses\n2. Keep View Caster open on phone\n3. Enter code on glasses\n4. Guests: open viewer URL → password Wedding → enter name\n5. Live Stream starts camera → viewers see it live\n6. Tap Stop Live Cast when done")
                 .font(.footnote)
                 .foregroundStyle(.white.opacity(0.65))
         }

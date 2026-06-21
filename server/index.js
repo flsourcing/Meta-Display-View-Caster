@@ -48,8 +48,50 @@ function sessionPayload(session) {
   };
 }
 
+function sanitizeViewerName(raw) {
+  const name = String(raw || '').trim().replace(/\s+/g, ' ').slice(0, 32);
+  return name.length >= 1 ? name : '';
+}
+
+function buildViewerList(session) {
+  const list = [];
+  for (const [viewerId, viewer] of session.viewers.entries()) {
+    list.push({
+      viewerId,
+      name: viewer.name || 'Guest',
+      status: viewer.status || 'waiting',
+    });
+  }
+  list.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  return list;
+}
+
+function viewerSocket(viewer) {
+  return viewer?.ws ?? viewer;
+}
+
+function broadcastViewerList(session, except = null) {
+  const payload = { type: 'viewer-list-updated', viewers: buildViewerList(session) };
+  if (session.relayWs && session.relayWs !== except) send(session.relayWs, payload);
+  for (const viewer of session.viewers.values()) {
+    const socket = viewerSocket(viewer);
+    if (socket && socket !== except) send(socket, payload);
+  }
+}
+
+function setAllViewerStatuses(session, status) {
+  for (const viewer of session.viewers.values()) {
+    viewer.status = status;
+  }
+}
+
 function broadcast(session, payload, except = null) {
-  const targets = [session.relayWs, session.glassesWs, session.desktopWs, ...session.viewers.values()];
+  const targets = [
+    session.relayWs,
+    session.glassesWs,
+    session.desktopWs,
+    ...[...session.viewers.values()].map(viewerSocket),
+  ];
   for (const ws of targets) {
     if (ws && ws !== except) send(ws, payload);
   }
@@ -94,6 +136,7 @@ function joinError(session, code) {
 function removeViewer(session, viewerId) {
   if (!viewerId) return;
   session.viewers.delete(viewerId);
+  broadcastViewerList(session);
   if (session.relayWs) {
     send(session.relayWs, { type: 'viewer-left', viewerId, viewerCount: session.viewers.size });
   }
@@ -164,8 +207,8 @@ wss.on('connection', (ws) => {
         if (session.glassesWs) {
           send(session.glassesWs, { type: 'relay-online', ...sessionPayload(session) });
         }
-        for (const vws of session.viewers.values()) {
-          send(vws, { type: 'relay-online', ...sessionPayload(session) });
+        for (const viewer of session.viewers.values()) {
+          send(viewerSocket(viewer), { type: 'relay-online', ...sessionPayload(session) });
         }
         if (session.desktopWs) {
           send(session.desktopWs, { type: 'relay-online', ...sessionPayload(session) });
@@ -188,12 +231,27 @@ wss.on('connection', (ws) => {
         if (session.relayWs) {
           send(session.relayWs, { type: 'glasses-joined', ...sessionPayload(session) });
         }
-        for (const vws of session.viewers.values()) {
-          send(vws, { type: 'glasses-joined', ...sessionPayload(session) });
+        for (const viewer of session.viewers.values()) {
+          send(viewerSocket(viewer), { type: 'glasses-joined', ...sessionPayload(session) });
         }
         if (session.desktopWs) {
           send(session.desktopWs, { type: 'glasses-joined', ...sessionPayload(session) });
         }
+        break;
+      }
+
+      case 'verify-viewer-password': {
+        const password = String(msg.password || '').trim();
+        if (password !== VIEWER_PASSWORD) {
+          send(ws, { type: 'error', message: 'Wrong password.' });
+          return;
+        }
+        const session = findViewableSession();
+        send(ws, {
+          type: 'viewer-password-ok',
+          relayOnline: !!session?.relayWs,
+          streaming: !!session?.streaming,
+        });
         break;
       }
 
@@ -204,25 +262,41 @@ wss.on('connection', (ws) => {
           send(ws, { type: 'error', message: 'Wrong password.' });
           return;
         }
+        const name = sanitizeViewerName(msg.name);
+        if (!name) {
+          send(ws, { type: 'error', message: 'Enter a viewer name.' });
+          return;
+        }
         const session = findViewableSession();
         if (!session?.relayWs) {
           send(ws, { type: 'error', message: 'No cast active yet — keep View Caster open on the phone.' });
           return;
         }
         viewerId = randomUUID();
-        session.viewers.set(viewerId, ws);
+        session.viewers.set(viewerId, {
+          ws,
+          name,
+          status: session.streaming ? 'watching' : 'waiting',
+        });
         sessionId = session.sessionId;
+        ws.viewerId = viewerId;
+        const viewers = buildViewerList(session);
         send(ws, {
           type: 'viewer-ack',
           role: 'viewer',
           viewerId,
+          viewers,
           ...sessionPayload(session),
         });
+        broadcastViewerList(session, ws);
         send(session.relayWs, {
           type: 'viewer-joined',
           viewerId,
+          name,
+          status: session.streaming ? 'watching' : 'waiting',
           viewerCount: session.viewers.size,
           streaming: session.streaming,
+          viewers,
         });
         break;
       }
@@ -267,7 +341,11 @@ wss.on('connection', (ws) => {
 
       case 'stop-stream': {
         const session = getSession(sessionId);
-        if (session) session.streaming = false;
+        if (session) {
+          session.streaming = false;
+          setAllViewerStatuses(session, 'waiting');
+          broadcastViewerList(session);
+        }
         const s = getSession(sessionId);
         if (!s) {
           send(ws, { type: 'error', message: 'Not in a session.' });
@@ -290,7 +368,11 @@ wss.on('connection', (ws) => {
 
       case 'stream-started': {
         const session = getSession(sessionId);
-        if (session) session.streaming = true;
+        if (session) {
+          session.streaming = true;
+          setAllViewerStatuses(session, 'watching');
+          broadcastViewerList(session);
+        }
         const s = getSession(sessionId);
         if (!s) {
           send(ws, { type: 'error', message: 'Not in a session.' });
@@ -308,11 +390,11 @@ wss.on('connection', (ws) => {
         }
         const targetViewer = msg.viewerId;
         if (targetViewer && session.viewers.has(targetViewer)) {
-          send(session.viewers.get(targetViewer), msg);
+          send(viewerSocket(session.viewers.get(targetViewer)), msg);
         } else if (session.desktopWs) {
           send(session.desktopWs, msg);
         } else {
-          for (const vws of session.viewers.values()) send(vws, msg);
+          for (const viewer of session.viewers.values()) send(viewerSocket(viewer), msg);
         }
         break;
       }
@@ -336,11 +418,11 @@ wss.on('connection', (ws) => {
         if (role === 'relay') {
           const targetViewer = msg.viewerId;
           if (targetViewer && session.viewers.has(targetViewer)) {
-            send(session.viewers.get(targetViewer), msg);
+            send(viewerSocket(session.viewers.get(targetViewer)), msg);
           } else if (session.desktopWs) {
             send(session.desktopWs, msg);
           } else {
-            for (const vws of session.viewers.values()) send(vws, msg);
+            for (const viewer of session.viewers.values()) send(viewerSocket(viewer), msg);
           }
         } else if (session.relayWs) {
           send(session.relayWs, msg);

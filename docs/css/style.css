@@ -372,3 +372,66 @@ body.glasses .glasses-stream-btn:focus {
     font-size: 1.25rem;
   }
 }
+
+.viewer-roster {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.roster-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.viewer-roster-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.viewer-roster-item.is-self {
+  border-color: var(--accent);
+}
+
+.viewer-roster-name {
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-roster-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.viewer-roster-badge.waiting {
+  color: #ffb74d;
+  background: rgba(255, 183, 77, 0.12);
+}
+
+.viewer-roster-badge.watching {
+  color: var(--success);
+  background: rgba(0, 200, 83, 0.12);
+}
+
+.viewer-roster-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 0.25rem 0;
+}

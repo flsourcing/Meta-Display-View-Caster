@@ -5,26 +5,41 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Meta Display View Caster</title>
-  <link rel="stylesheet" href="css/style.css?v=30">
+  <link rel="stylesheet" href="css/style.css?v=31">
 </head>
 <body>
   <div class="container">
     <header>
       <h1>Meta Display View Caster</h1>
-      <p id="header-sub">Enter password to watch the live stream — works on phone or desktop.</p>
+      <p id="header-sub">Enter password, then your name to watch the live stream.</p>
     </header>
 
-    <section id="connect-section">
+    <section id="password-section">
       <div class="card">
         <label for="password-input">Viewer password</label>
         <input id="password-input" type="password" autocomplete="off" placeholder="Password">
-        <button id="connect-btn" class="btn btn-primary" type="button">Watch live</button>
-        <p id="error-msg" class="message" role="alert"></p>
+        <button id="password-btn" class="btn btn-primary" type="button">Continue</button>
+        <p id="password-error" class="message" role="alert"></p>
       </div>
       <div class="card" style="margin-top:1rem;">
         <div id="status" class="status waiting">
           <span class="status-dot"></span>
-          <span id="status-text">Connecting automatically…</span>
+          <span id="status-text">Enter password to continue</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="username-section" class="hidden">
+      <div class="card">
+        <label for="username-input">Your name</label>
+        <input id="username-input" type="text" autocomplete="name" maxlength="32" placeholder="How should we show your name?">
+        <button id="join-btn" class="btn btn-primary" type="button">Join live stream</button>
+        <p id="username-error" class="message" role="alert"></p>
+      </div>
+      <div class="card" style="margin-top:1rem;">
+        <div class="status waiting">
+          <span class="status-dot"></span>
+          <span id="username-status-text">Pick a name so the caster can see who is watching</span>
         </div>
       </div>
     </section>
@@ -42,6 +57,11 @@
         <button id="unmute-btn" class="btn btn-secondary" type="button" style="margin-top:1rem;width:100%;">Tap for sound</button>
         <p id="capture-hint" class="message" style="margin-top:1rem;"></p>
       </div>
+
+      <div class="card" style="margin-top:1rem;">
+        <h2 class="roster-title">Viewers</h2>
+        <ul id="viewer-roster" class="viewer-roster" aria-live="polite"></ul>
+      </div>
     </section>
   </div>
 
@@ -51,11 +71,11 @@
     Password: <strong>Wedding</strong>
   </footer>
 
-  <script src="js/ws-signaling.js?v=30"></script>
-  <script src="js/webrtc-viewer.js?v=30"></script>
-  <script src="js/peerjs.min.js?v=30"></script>
-  <script src="config.js?v=30"></script>
-  <script src="js/signaling.js?v=30"></script>
-  <script src="js/desktop.js?v=30"></script>
+  <script src="js/ws-signaling.js?v=31"></script>
+  <script src="js/webrtc-viewer.js?v=31"></script>
+  <script src="js/peerjs.min.js?v=31"></script>
+  <script src="config.js?v=31"></script>
+  <script src="js/signaling.js?v=31"></script>
+  <script src="js/desktop.js?v=31"></script>
 </body>
 </html>

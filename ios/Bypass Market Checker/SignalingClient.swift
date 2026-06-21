@@ -1,5 +1,19 @@
 import Foundation
 
+struct ViewerPresence: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let status: String
+
+    var statusLabel: String {
+        status == "watching" ? "Watching" : "Waiting"
+    }
+
+    var isWatching: Bool {
+        status == "watching"
+    }
+}
+
 @MainActor
 final class SignalingClient: ObservableObject {
     @Published var code = "------"
@@ -8,6 +22,7 @@ final class SignalingClient: ObservableObject {
     @Published var desktopLinked = false
     @Published var glassesLinked = false
     @Published var viewerCount = 0
+    @Published var viewerRoster: [ViewerPresence] = []
 
     private var ws: URLSessionWebSocketTask?
     private var session: URLSession?
@@ -54,6 +69,7 @@ final class SignalingClient: ObservableObject {
         desktopLinked = false
         glassesLinked = false
         viewerCount = 0
+        viewerRoster = []
         status = "Offline"
     }
 
@@ -212,6 +228,35 @@ final class SignalingClient: ObservableObject {
         }
     }
 
+    private func applyViewerList(_ json: [String: Any]) {
+        guard let raw = json["viewers"] as? [[String: Any]] else { return }
+        viewerRoster = raw.compactMap { item in
+            guard let viewerId = item["viewerId"] as? String,
+                  let name = item["name"] as? String else { return nil }
+            let status = item["status"] as? String ?? "waiting"
+            return ViewerPresence(id: viewerId, name: name, status: status)
+        }
+        viewerCount = viewerRoster.count
+        desktopLinked = viewerCount > 0
+        refreshViewerStatusText()
+    }
+
+    private func refreshViewerStatusText() {
+        if viewerRoster.isEmpty {
+            status = glassesLinked ? "Glasses connected — waiting for viewers" : "Enter this code on desktop & glasses"
+            return
+        }
+        let watching = viewerRoster.filter(\.isWatching).count
+        let waiting = viewerRoster.count - watching
+        if watching > 0 && waiting > 0 {
+            status = "\(watching) watching, \(waiting) waiting"
+        } else if watching > 0 {
+            status = "\(watching) viewer\(watching == 1 ? "" : "s") watching"
+        } else {
+            status = "\(viewerRoster.count) viewer\(viewerRoster.count == 1 ? "" : "s") waiting"
+        }
+    }
+
     private func handle(_ text: String) {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -238,17 +283,28 @@ final class SignalingClient: ObservableObject {
             onDesktopJoined?()
         case "viewer-joined":
             if let vid = json["viewerId"] as? String {
-                desktopLinked = true
-                viewerCount = json["viewerCount"] as? Int ?? viewerCount + 1
-                status = viewerCount == 1 ? "Viewer connected" : "\(viewerCount) viewers connected"
+                if let viewers = json["viewers"] as? [[String: Any]] {
+                    applyViewerList(json)
+                } else {
+                    desktopLinked = true
+                    viewerCount = json["viewerCount"] as? Int ?? viewerCount + 1
+                    refreshViewerStatusText()
+                }
                 onViewerJoined?(vid)
             }
+        case "viewer-list-updated":
+            applyViewerList(json)
         case "viewer-left":
             if let vid = json["viewerId"] as? String {
-                viewerCount = json["viewerCount"] as? Int ?? max(0, viewerCount - 1)
+                if let viewers = json["viewers"] as? [[String: Any]] {
+                    applyViewerList(json)
+                } else {
+                    viewerRoster.removeAll { $0.id == vid }
+                    viewerCount = max(0, json["viewerCount"] as? Int ?? viewerCount - 1)
+                    desktopLinked = viewerCount > 0
+                    refreshViewerStatusText()
+                }
                 onViewerLeft?(vid)
-                desktopLinked = viewerCount > 0
-                status = viewerCount > 0 ? "\(viewerCount) viewers connected" : "Waiting for viewers"
             }
         case "glasses-joined":
             glassesLinked = true

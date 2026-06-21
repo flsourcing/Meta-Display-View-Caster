@@ -105,11 +105,24 @@
     return ws;
   }
 
-  async function joinViewer(password) {
+  async function verifyViewerPassword(password) {
     const ws = await connect();
-    send(ws, { type: 'join-viewer', password });
+    send(ws, { type: 'verify-viewer-password', password });
+    const msg = await waitFor(ws, 'viewer-password-ok');
+    ws.close();
+    return { relayOnline: !!msg.relayOnline, streaming: !!msg.streaming };
+  }
+
+  async function joinViewer(password, name) {
+    const ws = await connect();
+    send(ws, { type: 'join-viewer', password, name });
     const msg = await waitFor(ws, 'viewer-ack');
-    return { ws, viewerId: msg.viewerId, streaming: !!msg.streaming };
+    return {
+      ws,
+      viewerId: msg.viewerId,
+      streaming: !!msg.streaming,
+      viewers: msg.viewers || [],
+    };
   }
 
   async function fetchLiveStatus() {
@@ -124,5 +137,5 @@
     }
   }
 
-  window.CasterWS = { connect, send, waitFor, pairDesktop, joinGlasses, joinViewer, fetchLiveStatus, wsUrl, wakeServer, httpBase };
+  window.CasterWS = { connect, send, waitFor, pairDesktop, joinGlasses, joinViewer, verifyViewerPassword, fetchLiveStatus, wsUrl, wakeServer, httpBase };
 })();
