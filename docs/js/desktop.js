@@ -6,6 +6,7 @@
   const defaultPassword = window.CASTER_CONFIG?.VIEWER_PASSWORD || 'Wedding';
 
   const WAITING_CAST = 'Waiting For Live Cast';
+  const LIVE_REFRESH_HINT = 'If Stream is Live and no stream is showing, please refresh page!';
 
   function waitingStatusText() {
     return viewerName ? `Hi ${viewerName} — Waiting For Live Cast` : WAITING_CAST;
@@ -20,6 +21,11 @@
     setVideoPlaceholder(WAITING_CAST);
     setViewerStatus('waiting', waitingStatusText());
     if (els.captureHint) els.captureHint.textContent = '';
+  }
+
+  function showLiveViewerUi() {
+    setViewerStatus('connected', liveStatusText());
+    if (els.captureHint) els.captureHint.textContent = LIVE_REFRESH_HINT;
   }
 
   const els = {
@@ -427,12 +433,10 @@
       };
     }
     const hasAudio = stream.getAudioTracks().length > 0;
-    if (hasAudio) {
-      els.captureHint.textContent = 'Tap the stream for sound and fullscreen controls.';
-    } else {
-      els.captureHint.textContent = '';
+    showLiveViewerUi();
+    if (hasAudio && els.captureHint) {
+      els.captureHint.textContent = `${LIVE_REFRESH_HINT}\nTap the stream for sound and fullscreen controls.`;
     }
-    setViewerStatus('connected', liveStatusText());
     scrollToVideo();
     showVideoControls();
     startVideoHealthWatch();

@@ -334,6 +334,7 @@ input[type="password"].viewer-input:focus {
 
 #viewer-section .message {
   margin-top: 0.75rem;
+  white-space: pre-line;
 }
 
 .video-wrap video {
