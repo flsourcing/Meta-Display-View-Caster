@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Meta Display View Caster</title>
-  <link rel="stylesheet" href="css/style.css?v=33">
+  <link rel="stylesheet" href="css/style.css?v=34">
 </head>
 <body>
   <div class="container">
@@ -45,27 +45,37 @@
     </section>
 
     <section id="viewer-section" class="hidden">
-      <div class="card viewer-video-card">
-        <h2 class="viewer-video-title">Live stream</h2>
-        <div id="video-wrap" class="video-wrap viewer-video">
-          <video id="remote-video" autoplay playsinline muted></video>
-          <div id="video-placeholder" class="video-placeholder">Waiting for Live Stream from glasses…</div>
+      <div class="viewer-stage">
+        <div class="viewer-main card viewer-video-card">
+          <h2 class="viewer-video-title">Live cast</h2>
+          <div id="video-wrap" class="video-wrap viewer-video">
+            <video id="remote-video" autoplay playsinline muted></video>
+            <div id="video-placeholder" class="video-placeholder">Waiting for caster — open View Caster on the phone</div>
+          </div>
+          <div class="video-toolbar">
+            <button id="unmute-btn" class="btn btn-secondary" type="button">Tap for sound</button>
+            <button id="fullscreen-btn" class="btn btn-secondary" type="button">Fullscreen</button>
+          </div>
+          <p class="video-mobile-hint">Scroll to the cast window. Tap Fullscreen to enlarge on your phone.</p>
+          <div id="status-viewer" class="status waiting">
+            <span class="status-dot"></span>
+            <span>Waiting for live stream…</span>
+          </div>
+          <p id="capture-hint" class="message"></p>
         </div>
-        <div class="video-toolbar">
-          <button id="unmute-btn" class="btn btn-secondary" type="button">Tap for sound</button>
-          <button id="fullscreen-btn" class="btn btn-secondary" type="button">Fullscreen</button>
-        </div>
-        <p class="video-mobile-hint">Scroll down on your phone to watch here. Tap Fullscreen to enlarge.</p>
-        <div id="status-viewer" class="status connected">
-          <span class="status-dot"></span>
-          <span>Waiting for live stream…</span>
-        </div>
-        <p id="capture-hint" class="message"></p>
-      </div>
 
-      <div class="card" style="margin-top:1rem;">
-        <h2 class="roster-title">Viewers</h2>
-        <ul id="viewer-roster" class="viewer-roster" aria-live="polite"></ul>
+        <aside class="viewer-chat card">
+          <div class="viewer-chat-header">
+            <h2 class="roster-title">Live chat</h2>
+            <p class="viewer-chat-sub">Chat with other guests while you wait</p>
+          </div>
+          <ul id="viewer-roster" class="viewer-roster viewer-roster-compact" aria-live="polite"></ul>
+          <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
+          <form id="chat-form" class="chat-form">
+            <input id="chat-input" class="viewer-input chat-input" type="text" maxlength="500" placeholder="Say something…" autocomplete="off">
+            <button id="chat-send" class="btn btn-primary chat-send" type="submit">Send</button>
+          </form>
+        </aside>
       </div>
     </section>
   </div>
@@ -76,11 +86,11 @@
     Ask the host for the viewer password
   </footer>
 
-  <script src="js/ws-signaling.js?v=33"></script>
-  <script src="js/webrtc-viewer.js?v=33"></script>
-  <script src="js/peerjs.min.js?v=33"></script>
-  <script src="config.js?v=33"></script>
-  <script src="js/signaling.js?v=33"></script>
-  <script src="js/desktop.js?v=33"></script>
+  <script src="js/ws-signaling.js?v=34"></script>
+  <script src="js/webrtc-viewer.js?v=34"></script>
+  <script src="js/peerjs.min.js?v=34"></script>
+  <script src="config.js?v=34"></script>
+  <script src="js/signaling.js?v=34"></script>
+  <script src="js/desktop.js?v=34"></script>
 </body>
 </html>

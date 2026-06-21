@@ -121,7 +121,9 @@
       ws,
       viewerId: msg.viewerId,
       streaming: !!msg.streaming,
+      relayOnline: !!msg.relayOnline,
       viewers: msg.viewers || [],
+      chatHistory: msg.chatHistory || [],
     };
   }
 

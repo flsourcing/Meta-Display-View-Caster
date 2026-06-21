@@ -8,6 +8,8 @@ const PORT = process.env.PORT || 8080;
 const CODE_ROTATION_MS = 300_000;
 const RELAY_GRACE_MS = 900_000;
 const VIEWER_PASSWORD = process.env.VIEWER_PASSWORD || 'Wedding';
+const PUBLIC_LOBBY_ID = 'public-cast';
+const CHAT_HISTORY_LIMIT = 100;
 
 function passwordsMatch(input, expected) {
   return String(input || '').trim().toLowerCase() === String(expected || '').trim().toLowerCase();
@@ -127,6 +129,41 @@ function findViewableSession() {
   return null;
 }
 
+function findOrCreateLobbySession() {
+  let session = sessions.get(PUBLIC_LOBBY_ID);
+  if (!session) {
+    session = {
+      sessionId: PUBLIC_LOBBY_ID,
+      relayWs: null,
+      glassesWs: null,
+      desktopWs: null,
+      viewers: new Map(),
+      chatHistory: [],
+      code: '',
+      codeExpiresAt: 0,
+      relayDetachedAt: 0,
+      streaming: false,
+      isPublicLobby: true,
+    };
+    sessions.set(PUBLIC_LOBBY_ID, session);
+  }
+  if (!session.chatHistory) session.chatHistory = [];
+  if (!session.viewers) session.viewers = new Map();
+  return session;
+}
+
+function sessionForViewerJoin() {
+  return findViewableSession() || findOrCreateLobbySession();
+}
+
+function pushChatMessage(session, payload) {
+  if (!session.chatHistory) session.chatHistory = [];
+  session.chatHistory.push(payload);
+  if (session.chatHistory.length > CHAT_HISTORY_LIMIT) {
+    session.chatHistory.splice(0, session.chatHistory.length - CHAT_HISTORY_LIMIT);
+  }
+}
+
 function joinError(session, code) {
   if (!session) {
     return 'Code not found. Open the phone app, wait for a 6-digit code, then enter it here.';
@@ -180,8 +217,16 @@ wss.on('connection', (ws) => {
         const reconnectId = typeof msg.sessionId === 'string' ? msg.sessionId : '';
         let session = reconnectId ? getSession(reconnectId) : null;
 
+        if (!session) {
+          const lobby = sessions.get(PUBLIC_LOBBY_ID);
+          if (lobby && !lobby.relayWs) {
+            session = lobby;
+          }
+        }
+
         if (session) {
           if (!session.viewers) session.viewers = new Map();
+          if (!session.chatHistory) session.chatHistory = [];
           session.relayWs = ws;
           session.relayDetachedAt = 0;
           sessionId = session.sessionId;
@@ -198,6 +243,7 @@ wss.on('connection', (ws) => {
             glassesWs: null,
             desktopWs: null,
             viewers: new Map(),
+            chatHistory: [],
             code: '',
             codeExpiresAt: 0,
             relayDetachedAt: 0,
@@ -271,11 +317,7 @@ wss.on('connection', (ws) => {
           send(ws, { type: 'error', message: 'Enter a viewer name.' });
           return;
         }
-        const session = findViewableSession();
-        if (!session?.relayWs) {
-          send(ws, { type: 'error', message: 'No cast active yet — keep View Caster open on the phone.' });
-          return;
-        }
+        const session = sessionForViewerJoin();
         viewerId = randomUUID();
         session.viewers.set(viewerId, {
           ws,
@@ -290,18 +332,43 @@ wss.on('connection', (ws) => {
           role: 'viewer',
           viewerId,
           viewers,
+          chatHistory: (session.chatHistory || []).slice(-50),
           ...sessionPayload(session),
         });
         broadcastViewerList(session, ws);
-        send(session.relayWs, {
-          type: 'viewer-joined',
+        if (session.relayWs) {
+          send(session.relayWs, {
+            type: 'viewer-joined',
+            viewerId,
+            name,
+            status: session.streaming ? 'watching' : 'waiting',
+            viewerCount: session.viewers.size,
+            streaming: session.streaming,
+            viewers,
+          });
+        }
+        break;
+      }
+
+      case 'chat-message': {
+        const session = getSession(sessionId);
+        if (!session || role !== 'viewer' || !viewerId) {
+          send(ws, { type: 'error', message: 'Not in a session.' });
+          return;
+        }
+        const text = String(msg.text || '').trim().slice(0, 500);
+        if (!text) return;
+        const viewer = session.viewers.get(viewerId);
+        const payload = {
+          type: 'chat-message',
+          id: randomUUID(),
           viewerId,
-          name,
-          status: session.streaming ? 'watching' : 'waiting',
-          viewerCount: session.viewers.size,
-          streaming: session.streaming,
-          viewers,
-        });
+          name: viewer?.name || 'Guest',
+          text,
+          at: Date.now(),
+        };
+        pushChatMessage(session, payload);
+        broadcast(session, payload);
         break;
       }
 
