@@ -123,7 +123,7 @@ final class WearablesManager: ObservableObject {
         case .available:
             wearablesStatus = "Register the app, allow camera, then capture from the glasses."
         case .unavailable:
-            wearablesStatus = "Registration unavailable. Check Meta AI and Developer Mode."
+            wearablesStatus = unavailableDetail()
         @unknown default:
             break
         }
@@ -148,6 +148,14 @@ final class WearablesManager: ObservableObject {
     }
 
     // MARK: - Bypass: startRegistration
+
+    /// Sideloaded apps must tap the app in Meta AI to deliver viewcaster:// — switching back alone is not enough.
+    var needsCompleteRegistration: Bool {
+        registrationSetupStatus != .success
+            && (sdk.registrationState == .registering
+                || sdk.registrationState == .unavailable
+                || registrationOpenedAt != nil)
+    }
 
     func startRegistration() {
         Task {
@@ -255,13 +263,39 @@ final class WearablesManager: ObservableObject {
         beginGlassesConnectionSetup(showStatus: false)
     }
 
+    /// Opens Meta AI so the user can tap View Caster Relay → triggers viewcaster:// callback.
+    func completeRegistrationInMetaAI() {
+        Task {
+            wearablesStatus = "Opening Meta AI — tap View Caster Relay to finish…"
+            do {
+                try await sdk.openDATGlassesAppUpdate()
+            } catch {
+                NSLog("ViewCaster: openDATGlassesAppUpdate: \(error.localizedDescription)")
+                do {
+                    try await sdk.startRegistration()
+                } catch {
+                    NSLog("ViewCaster: startRegistration retry: \(error.localizedDescription)")
+                }
+            }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            _ = await waitForRegistrationReady(timeoutSeconds: 30)
+            refreshSetupProgress()
+            if !isRegistrationReady(sdk.registrationState) {
+                wearablesStatus = unavailableDetail()
+            }
+        }
+    }
+
     // MARK: - Bypass: onAppBecameActive
 
     func onAppBecameActive() async {
-        let timeout: TimeInterval = registrationOpenedAt == nil ? 2 : 10
+        let timeout: TimeInterval = registrationOpenedAt == nil ? 2 : 15
         if await waitForRegistrationReady(timeoutSeconds: timeout) {
             registrationOpenedAt = nil
             refreshSetupProgress()
+        } else if sdk.registrationState == .registering || registrationOpenedAt != nil {
+            // Sideload: Meta AI Connect succeeded but viewcaster:// was not delivered yet.
+            wearablesStatus = "Almost done — tap Complete in Meta AI below (don't use app switcher alone)."
         }
 
         if pendingCameraPermissionRetry {
@@ -271,6 +305,19 @@ final class WearablesManager: ObservableObject {
             _ = await resolveCameraPermissionIfAlreadyGranted()
             refreshSetupProgress()
         }
+    }
+
+    private func unavailableDetail() -> String {
+        if let issue = SigningInfo.metaConnectionIssue {
+            return issue
+        }
+        if datMetaAppID == "0" || datClientToken == "<missing>" || datClientToken.isEmpty {
+            return "MWDAT missing MetaAppID/ClientToken in this IPA. Reinstall latest GitHub release."
+        }
+        return """
+        Registration unavailable. After Connect in Meta AI, tap "Complete in Meta AI" \
+        (opens Meta AI → tap View Caster Relay). App switcher alone won't finish registration.
+        """
     }
 
     func runWearablesDiagnostics() async {

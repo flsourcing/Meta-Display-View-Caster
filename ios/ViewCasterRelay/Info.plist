@@ -29,8 +29,6 @@
 		<string>AR|974304118762997|80d303efb43a2a01cbbb6c730fde2f8d</string>
 		<key>TeamID</key>
 		<string>JM52FT93Z2</string>
-		<key>DAMEnabled</key>
-		<true/>
 		<key>Analytics</key>
 		<dict>
 			<key>OptOut</key>

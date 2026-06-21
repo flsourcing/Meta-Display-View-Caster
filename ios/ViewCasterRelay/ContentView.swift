@@ -322,10 +322,21 @@ struct ContentView: View {
                             isSuccess: model.wearables.registrationSetupStatus == .success,
                             buttonTitle: "Register With Meta AI",
                             buttonIcon: "link",
-                            hint: "Complete registration in Meta AI, then return here. Next unlocks when connected.",
+                            hint: "1) Connect in Meta AI. 2) Tap Complete in Meta AI below. 3) Tap View Caster Relay in Meta AI.",
                             disabled: model.wearables.registrationSetupStatus == .success || model.metaBlocked
                         ) {
                             model.connectMetaAI()
+                        }
+
+                        if model.wearables.needsCompleteRegistration {
+                            Button {
+                                model.wearables.completeRegistrationInMetaAI()
+                            } label: {
+                                Label("Complete in Meta AI", systemImage: "arrow.uturn.backward.circle.fill")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.orange)
                         }
 
                         MetaSetupStepView(
