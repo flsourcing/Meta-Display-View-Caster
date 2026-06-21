@@ -14,6 +14,8 @@ import Vision
 
 extension Notification.Name {
     static let wearablesURLHandled = Notification.Name("wearablesURLHandled")
+    static let castStartRequested = Notification.Name("castStartRequested")
+    static let castStopRequested = Notification.Name("castStopRequested")
 }
 
 struct ContentView: View {
@@ -123,6 +125,12 @@ struct ContentView: View {
             }
             .sheet(isPresented: $viewModel.showSettings) {
                 SettingsSheetView(viewModel: viewModel)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .castStartRequested)) { _ in
+                Task { await viewModel.handleCastStartFromGlasses() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .castStopRequested)) { _ in
+                viewModel.userStopLiveCast()
             }
         }
     }
@@ -1852,6 +1860,9 @@ final class CompanionViewModel: ObservableObject {
     @Published var showBarcodeCamera = false
     @Published var showConfetti = false
     @Published var glassesConnectionStatus: GlassesConnectionStatus = .disconnected
+    @Published var glassesPreparedForCast = false
+    @Published private(set) var isLiveCasting = false
+    @Published private(set) var isStartingLiveCast = false
     @Published var lookupHistory: [LookupHistoryEntry] = []
     @Published var hasGeminiApiKey = false
     @Published var geminiApiKeyInput = ""
@@ -4376,12 +4387,16 @@ final class CompanionViewModel: ObservableObject {
     private func updateReadyWearablesStatus() {
         if readyDeviceSession?.state == .started {
             wearablesStatus = "Glasses ready for capture."
+            glassesPreparedForCast = true
         } else if isMobileSetupComplete, UserDefaults.standard.bool(forKey: cameraPermissionConfirmedKey) {
             wearablesStatus = "Glasses ready for capture."
+            glassesPreparedForCast = UserDefaults.standard.bool(forKey: datConnectionReadyKey)
         } else if UserDefaults.standard.bool(forKey: cameraPermissionConfirmedKey) {
             wearablesStatus = "Camera access approved."
+            glassesPreparedForCast = false
         } else if isRegistrationStateReady(Wearables.shared.registrationState) {
             wearablesStatus = "Registered with Meta AI."
+            glassesPreparedForCast = false
         }
         refreshGlassesConnectionStatus()
     }
@@ -4682,7 +4697,7 @@ final class CompanionViewModel: ObservableObject {
 
         relaySignaling.onStartStream = { [weak self] in
             Task { @MainActor in
-                await self?.beginLiveCastFromSignaling()
+                await self?.handleCastStartFromGlasses()
             }
         }
         relaySignaling.onStopStream = { [weak self] in
@@ -4704,35 +4719,39 @@ final class CompanionViewModel: ObservableObject {
     }
 
     private func startGlassesStreamForLiveCast() async throws {
-        var ready = await ensureReadyDeviceSession(showStatus: false, timeoutSeconds: 45)
+        var ready = glassesPreparedForCast || (readyDeviceSession?.state == .started)
         if !ready {
-            relaySignaling.status = "Waiting for glasses… open Meta AI"
+            relaySignaling?.status = "Waiting for glasses…"
             openMetaAIApp()
             try? await Task.sleep(nanoseconds: 2_000_000_000)
-            ready = await ensureReadyDeviceSession(showStatus: false, timeoutSeconds: 30)
+            ready = await ensureReadyDeviceSession(showStatus: false, timeoutSeconds: 60)
         }
         guard ready else {
             throw APIError(
-                message: "No eligible device available. Keep Meta AI open with glasses connected, then retry Live Stream."
+                message: "No eligible device available. Tap Prepare Glasses first, keep Meta AI open, then retry."
             )
         }
+        glassesPreparedForCast = true
 
         if cameraStream != nil {
             await stopCameraStreamOnly()
         }
 
         do {
-            try await startGlassesStreamAttempt(quiet: true, photoCaptureOnly: false, deviceTimeoutSeconds: 25)
+            try await startGlassesStreamAttempt(quiet: true, photoCaptureOnly: false, deviceTimeoutSeconds: 30)
         } catch {
-            if error.localizedDescription.localizedCaseInsensitiveContains("no eligible device") {
+            if error.localizedDescription.localizedCaseInsensitiveContains("no eligible device")
+                || error.localizedDescription.localizedCaseInsensitiveContains("no dat device") {
                 openMetaAIApp()
                 wearablesStatus = "Re-syncing with Meta AI…"
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
                 readyDeviceSession = nil
-                guard await ensureReadyDeviceSession(showStatus: false, timeoutSeconds: 25) else {
+                glassesPreparedForCast = false
+                guard await ensureReadyDeviceSession(showStatus: false, timeoutSeconds: 45) else {
                     throw error
                 }
-                try await startGlassesStreamAttempt(quiet: true, photoCaptureOnly: false, deviceTimeoutSeconds: 25)
+                glassesPreparedForCast = true
+                try await startGlassesStreamAttempt(quiet: true, photoCaptureOnly: false, deviceTimeoutSeconds: 30)
                 return
             }
             throw error
@@ -4760,42 +4779,101 @@ final class CompanionViewModel: ObservableObject {
         showMessage("Copied pairing code.")
     }
 
+    func prepareGlassesForCast() async {
+        isBusy = true
+        defer { isBusy = false }
+
+        configureCastRelay()
+        wearablesStatus = "Preparing glasses connection…"
+        relaySignaling?.status = "Preparing glasses…"
+        openMetaAIApp()
+        startActiveDeviceMonitoring()
+
+        let ready = await ensureReadyDeviceSession(showStatus: true, timeoutSeconds: 60)
+        glassesPreparedForCast = ready
+        if ready {
+            relaySignaling?.status = "Glasses ready — tap Start Live Cast"
+            showMessage("Glasses ready. Tap Start Live Cast or Live Stream on glasses.")
+        } else {
+            relaySignaling?.status = "Glasses not ready — tap Prepare Glasses"
+            showError("Could not connect to glasses. Keep Meta AI open with glasses connected, then tap Prepare Glasses again.")
+        }
+        updateReadyWearablesStatus()
+    }
+
+    func handleCastStartFromGlasses() async {
+        await performLiveCast(triggeredByGlasses: true)
+    }
+
+    func userStartLiveCast() async {
+        await performLiveCast(triggeredByGlasses: false)
+    }
+
+    func userStopLiveCast() {
+        relaySignaling?.sendSignal(type: "stop-stream")
+        endLiveCast()
+    }
+
     func beginLiveCastFromSignaling() async {
+        await handleCastStartFromGlasses()
+    }
+
+    private func performLiveCast(triggeredByGlasses: Bool) async {
         if castTask != nil { return }
 
         castTask = Task { @MainActor in
             defer { castTask = nil }
 
+            isStartingLiveCast = true
             isLiveCastActive = true
             configureCastRelay()
-            castWebRTC.prepareFactory()
-            castWebRTC.attach(signaling: relaySignaling)
-            relaySignaling.status = "Starting live stream…"
-            castWebRTC.startStream()
+            relaySignaling.status = triggeredByGlasses
+                ? "Live Stream from glasses — starting camera…"
+                : "Starting live cast…"
+
+            defer {
+                isStartingLiveCast = false
+            }
 
             guard await ensureBluetoothPoweredOn(actionName: "Live Stream") else {
+                relaySignaling.sendSignal(type: "stream-error", payload: ["message": "Bluetooth is off"])
                 endLiveCast()
                 return
             }
             guard await ensureRegistered(actionName: "Live Stream") else {
+                relaySignaling.sendSignal(type: "stream-error", payload: ["message": "Not registered with Meta AI"])
                 endLiveCast()
                 return
             }
 
+            openMetaAIApp()
+
             do {
+                if !glassesPreparedForCast {
+                    relaySignaling.status = "Connecting to glasses…"
+                    _ = await ensureReadyDeviceSession(showStatus: false, timeoutSeconds: 60)
+                }
+
                 try await startGlassesStreamForLiveCast()
+                isLiveCasting = true
+
+                castWebRTC.prepareFactory()
+                castWebRTC.attach(signaling: relaySignaling)
+                castWebRTC.startStream()
+
                 relaySignaling.sendSignal(type: "stream-started", payload: ["source": "glasses"])
-                relaySignaling.status = "Live casting from glasses"
-                wearablesStatus = "Live cast active — POV streaming to desktop"
+                relaySignaling.status = "Live casting — tap Stop when done"
+                wearablesStatus = "Live cast active"
 
                 while !Task.isCancelled && isLiveCastActive && cameraStream != nil {
                     try? await Task.sleep(nanoseconds: 500_000_000)
                 }
             } catch {
                 if !Task.isCancelled {
-                    relaySignaling.sendSignal(type: "stream-error", payload: ["message": error.localizedDescription])
-                    relaySignaling.status = error.localizedDescription
-                    showError("Live stream failed: \(error.localizedDescription)")
+                    let msg = error.localizedDescription
+                    relaySignaling.sendSignal(type: "stream-error", payload: ["message": msg])
+                    relaySignaling.status = msg
+                    showError("Live stream failed: \(msg)")
                 }
                 endLiveCast()
             }
@@ -4806,6 +4884,8 @@ final class CompanionViewModel: ObservableObject {
 
     func endLiveCast() {
         isLiveCastActive = false
+        isLiveCasting = false
+        isStartingLiveCast = false
         castTask?.cancel()
         castTask = nil
         stopGlassesStream()
@@ -4813,6 +4893,7 @@ final class CompanionViewModel: ObservableObject {
         relaySignaling?.status = relaySignaling?.connected == true
             ? "Enter this code on desktop & glasses"
             : "Offline"
+        updateReadyWearablesStatus()
     }
 }
 

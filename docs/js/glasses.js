@@ -157,6 +157,28 @@
     }
   }
 
+  function openPhoneCompanion() {
+    const urls = [
+      'bypassmarketchecker://cast/start',
+      'bypassmarketchecker://start',
+    ];
+    for (const url of urls) {
+      try {
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = url;
+        document.body.appendChild(iframe);
+        window.setTimeout(() => iframe.remove(), 1500);
+        const a = document.createElement('a');
+        a.href = url;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } catch (_) { /* ignore */ }
+    }
+  }
+
   function toggleStream() {
     if (!connected) return;
     if (isDuplicateKey('stream')) return;
@@ -168,8 +190,11 @@
       els.streamBtn.textContent = 'Live Stream';
       els.streamBtn.classList.remove('active');
     } else {
+      openPhoneCompanion();
       if (useWS) CasterWS.send(ws, { type: 'start-stream' });
       else CasterSignaling.sendData(dataConn, { type: 'start-stream' });
+      els.streamHint.textContent = 'Opening phone app…';
+      setStatus('waiting', 'Starting on phone…');
     }
   }
 

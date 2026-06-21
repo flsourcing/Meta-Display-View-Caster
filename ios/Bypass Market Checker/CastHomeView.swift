@@ -29,6 +29,10 @@ struct CastHomeView: View {
                     .foregroundStyle(.white.opacity(0.75))
             }
 
+            Text(viewModel.wearablesStatus)
+                .font(.footnote)
+                .foregroundStyle(viewModel.glassesPreparedForCast ? .green : .orange)
+
             VStack(alignment: .leading, spacing: 10) {
                 linkRow(
                     title: "Desktop",
@@ -38,8 +42,39 @@ struct CastHomeView: View {
                 linkRow(
                     title: "Glasses",
                     linked: signaling.glassesLinked,
-                    hint: "Open glasses page in Meta AI → enter code → Live Stream"
+                    hint: "Enter code on glasses → Live Stream opens this app"
                 )
+            }
+
+            Button {
+                Task { await viewModel.prepareGlassesForCast() }
+            } label: {
+                Label("Prepare Glasses", systemImage: "eyeglasses")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .disabled(viewModel.isBusy || viewModel.isLiveCasting)
+
+            if viewModel.isLiveCasting {
+                Button {
+                    viewModel.userStopLiveCast()
+                } label: {
+                    Label("Stop Live Cast", systemImage: "stop.circle.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PrimaryButtonStyle(isEnabled: true))
+            } else {
+                Button {
+                    Task { await viewModel.userStartLiveCast() }
+                } label: {
+                    Label(
+                        viewModel.isStartingLiveCast ? "Starting camera…" : "Start Live Cast",
+                        systemImage: "video.fill"
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PrimaryButtonStyle(isEnabled: !viewModel.isBusy && !viewModel.isStartingLiveCast))
+                .disabled(viewModel.isBusy || viewModel.isStartingLiveCast)
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -71,15 +106,7 @@ struct CastHomeView: View {
             }
             .buttonStyle(SecondaryButtonStyle())
 
-            Button {
-                viewModel.restartCastRelay()
-            } label: {
-                Label(signaling.connected ? "Restart relay" : "Start relay", systemImage: "arrow.triangle.2.circlepath")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(PrimaryButtonStyle(isEnabled: !viewModel.isBusy))
-
-            Text("Keep this app open. After glasses join, wait for “Glasses connected”, then tap Live Stream. Meta AI must stay open on the glasses.")
+            Text("1. Tap Prepare Glasses (Meta AI must be open)\n2. Enter code on desktop & glasses\n3. Live Stream on glasses jumps to this app and starts camera\n4. Tap Stop Live Cast here when done")
                 .font(.footnote)
                 .foregroundStyle(.white.opacity(0.65))
         }
