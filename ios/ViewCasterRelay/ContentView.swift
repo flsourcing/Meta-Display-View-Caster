@@ -298,7 +298,7 @@ struct ContentView: View {
                             isSuccess: model.wearables.registrationSetupStatus == .success,
                             buttonTitle: "Register With Meta AI",
                             buttonIcon: "link",
-                            hint: "Complete registration in Meta AI, then return here. Next unlocks when connected.",
+                            hint: "Toggle ON and tap Connect in Meta AI. Let it return you here automatically — do not use the back button.",
                             disabled: model.wearables.registrationSetupStatus == .success || model.metaBlocked
                         ) {
                             model.connectMetaAI()

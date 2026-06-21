@@ -1,6 +1,6 @@
 import UIKit
 
-/// Delivers Meta AI callback URLs (viewcaster://…) — must not drop URLs that arrive before SwiftUI onAppear.
+/// Delivers Meta AI callback URLs (viewcaster://…) from every iOS entry point.
 final class MetaAppDelegate: NSObject, UIApplicationDelegate {
     static var onOpenURL: ((URL) -> Void)? {
         didSet { flushPendingURLs() }
@@ -14,6 +14,18 @@ final class MetaAppDelegate: NSObject, UIApplicationDelegate {
 
     func application(
         _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        for context in options.urlContexts {
+            NSLog("ViewCaster: cold-start URL \(context.url.absoluteString)")
+            MetaAppDelegate.deliver(context.url)
+        }
+        return UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+    }
+
+    func application(
+        _ application: UIApplication,
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
@@ -22,7 +34,7 @@ final class MetaAppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 
-    private static func deliver(_ url: URL) {
+    fileprivate static func deliver(_ url: URL) {
         if let handler = onOpenURL {
             handler(url)
         } else {

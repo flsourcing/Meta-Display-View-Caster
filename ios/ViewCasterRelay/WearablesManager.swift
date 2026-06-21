@@ -32,8 +32,10 @@ final class WearablesManager: ObservableObject {
     private var registrationOpenedAt: Date?
     private var pendingCameraPermissionRetry = false
     private var urlHandledObserver: NSObjectProtocol?
-    private var lastHandledURL: String?
+    private var lastHandledURLTime: Date?
+    private var lastHandledURLString: String?
     private var foregroundSyncTask: Task<Void, Never>?
+    private var didConfigure = false
 
     var onVideoFrame: ((VideoFrame) -> Void)?
 
@@ -72,14 +74,22 @@ final class WearablesManager: ObservableObject {
 
     private var foregroundObserver: NSObjectProtocol?
 
-    func configure(configError: String? = nil) {
-        sdkConfigureNote = configError ?? "SDK configured"
-        deviceSelector = AutoDeviceSelector(wearables: sdk)
-        applyRegistrationState(sdk.registrationState)
-        refreshSetupProgress()
+    private func ensureMetaSDKReady() {
+        if deviceSelector == nil {
+            deviceSelector = AutoDeviceSelector(wearables: sdk)
+        }
+        guard !didConfigure else { return }
+        didConfigure = true
         startObservers()
         startRegistrationMonitoring()
         installForegroundObserver()
+    }
+
+    func configure(configError: String? = nil) {
+        sdkConfigureNote = configError ?? "SDK configured"
+        ensureMetaSDKReady()
+        applyRegistrationState(sdk.registrationState)
+        refreshSetupProgress()
         Task { await onAppBecameActive() }
     }
 
@@ -101,26 +111,40 @@ final class WearablesManager: ObservableObject {
     }
 
     func handleIncomingURL(_ url: URL) async {
+        ensureMetaSDKReady()
+
         let key = url.absoluteString
-        guard lastHandledURL != key else { return }
-        lastHandledURL = key
+        let now = Date()
+        if lastHandledURLString == key,
+           let last = lastHandledURLTime,
+           now.timeIntervalSince(last) < 0.5 {
+            return
+        }
+        lastHandledURLString = key
+        lastHandledURLTime = now
 
         NSLog("ViewCaster: handleIncomingURL \(key)")
         lastMetaCallback = key
         do {
             let handled = try await sdk.handleUrl(url)
+            NSLog("ViewCaster: handleUrl handled=\(handled) state=\(sdk.registrationState)")
+            registrationOpenedAt = nil
+            applyRegistrationState(sdk.registrationState)
             if handled {
-                registrationOpenedAt = nil
                 NotificationCenter.default.post(name: .wearablesURLHandled, object: url)
             }
-            applyRegistrationState(sdk.registrationState)
-            refreshSetupProgress()
-            _ = await ensureRegistrationComplete()
-            refreshSetupProgress()
         } catch {
             registrationLabel = "Meta callback error: \(error.localizedDescription)"
             lastMetaSyncNote = "Callback error: \(error.localizedDescription)"
+            NSLog("ViewCaster: handleUrl error: \(error.localizedDescription)")
         }
+
+        _ = await ensureRegistrationComplete()
+        refreshSetupProgress()
+        await finishPendingCameraPermissionIfPossible()
+        _ = await resolveCameraPermissionIfAlreadyGranted()
+        await syncMetaStatus()
+        refreshSetupProgress()
     }
 
     /// Backward-compatible entry for RelayViewModel.
