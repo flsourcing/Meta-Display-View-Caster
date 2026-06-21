@@ -70,6 +70,9 @@
   let offerWatchdog = null;
   let controlsHideTimer = null;
   let livePollTimer = null;
+  let videoHealthTimer = null;
+  let noVideoStreak = 0;
+  let lastOfferAt = 0;
 
   const params = new URLSearchParams(location.search);
   const urlPassword = params.get('password') || params.get('p') || '';
@@ -98,7 +101,7 @@
   }
 
   function updateWaitingState() {
-    if (els.remoteVideo?.srcObject) return;
+    if (hasHealthyVideo()) return;
     if (streamPending || streamActive) {
       setVideoPlaceholder(PLACEHOLDER.starting);
       setViewerStatus('waiting', streamActive ? 'Connecting to live stream…' : 'Glasses camera starting…');
@@ -241,11 +244,69 @@
   function scheduleOfferWatchdog() {
     clearOfferWatchdog();
     offerWatchdog = setTimeout(() => {
-      if (!els.remoteVideo?.srcObject && (streamPending || streamActive || relayOnline)) {
+      if (!hasHealthyVideo() && (streamPending || streamActive || relayOnline)) {
         requestViewerOffer();
         scheduleOfferWatchdog();
       }
     }, 3000);
+  }
+
+  function hasHealthyVideo() {
+    const video = els.remoteVideo;
+    const stream = video?.srcObject;
+    if (!video || !stream) return false;
+    const track = stream.getVideoTracks()[0];
+    if (!track || track.readyState !== 'live') return false;
+    if (video.videoWidth > 0 && video.videoHeight > 0) return true;
+    if (pc && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed')) {
+      return false;
+    }
+    return false;
+  }
+
+  function startVideoHealthWatch() {
+    stopVideoHealthWatch();
+    noVideoStreak = 0;
+    videoHealthTimer = setInterval(() => {
+      if (!connected) return;
+      if (hasHealthyVideo()) {
+        noVideoStreak = 0;
+        return;
+      }
+      if (!streamActive && !streamPending && !els.remoteVideo?.srcObject) return;
+      noVideoStreak += 1;
+      if (noVideoStreak >= 2) {
+        forceStreamReconnect('Video stalled — reconnecting…');
+      }
+    }, 3000);
+  }
+
+  function stopVideoHealthWatch() {
+    if (videoHealthTimer) {
+      clearInterval(videoHealthTimer);
+      videoHealthTimer = null;
+    }
+    noVideoStreak = 0;
+  }
+
+  function forceStreamReconnect(reason) {
+    stopVideoHealthWatch();
+    clearOfferWatchdog();
+    pc?.close();
+    pc = null;
+    if (els.remoteVideo) els.remoteVideo.srcObject = null;
+    markStreamLive();
+    if (reason) {
+      setVideoPlaceholder(PLACEHOLDER.starting);
+      setViewerStatus('waiting', reason);
+    }
+    requestViewerOffer();
+    scheduleOfferWatchdog();
+  }
+
+  function onStreamLost() {
+    if (!streamActive && !streamPending) return;
+    forceStreamReconnect('Stream interrupted — reconnecting…');
   }
 
   function showStreamConnectingUi() {
@@ -257,7 +318,11 @@
   }
 
   function beginStreamConnect() {
-    if (els.remoteVideo?.srcObject) return;
+    if (hasHealthyVideo()) return;
+    if (els.remoteVideo?.srcObject) {
+      forceStreamReconnect('Refreshing video…');
+      return;
+    }
     showStreamConnectingUi();
     requestViewerOffer();
     scheduleOfferWatchdog();
@@ -272,7 +337,7 @@
   function startLivePoll() {
     stopLivePoll();
     livePollTimer = setInterval(async () => {
-      if (!connected || els.remoteVideo?.srcObject) {
+      if (!connected || hasHealthyVideo()) {
         stopLivePoll();
         return;
       }
@@ -354,25 +419,46 @@
     }
   }
 
-  function onStreamActive(stream) {
+  function onStreamActive(stream, track) {
     clearOfferWatchdog();
     stopLivePoll();
     streamPending = false;
     streamActive = true;
     relayOnline = true;
+    noVideoStreak = 0;
     els.remoteVideo.srcObject = stream;
     els.videoPlaceholder.classList.add('hidden');
     els.remoteVideo.muted = true;
     updateMuteButton();
+    const playPromise = els.remoteVideo.play();
+    if (playPromise?.catch) playPromise.catch(() => {});
+    if (track) {
+      track.onunmute = () => {
+        els.remoteVideo.play().catch(() => {});
+      };
+    }
     const hasAudio = stream.getAudioTracks().length > 0;
     if (hasAudio) {
       els.captureHint.textContent = 'Tap the stream for sound and fullscreen controls.';
     } else {
       els.captureHint.textContent = '';
     }
-    setViewerStatus('connected', `Live stream active — ${viewerName}`);
+    const markLive = () => setViewerStatus('connected', `Live stream active — ${viewerName}`);
+    if (els.remoteVideo.videoWidth > 0) {
+      markLive();
+    } else {
+      setViewerStatus('waiting', 'Receiving video…');
+      const waitForFrames = setInterval(() => {
+        if (els.remoteVideo.videoWidth > 0) {
+          clearInterval(waitForFrames);
+          markLive();
+        }
+      }, 400);
+      setTimeout(() => clearInterval(waitForFrames), 12000);
+    }
     scrollToVideo();
     showVideoControls();
+    startVideoHealthWatch();
   }
 
   function showUsernameStep() {
@@ -399,6 +485,7 @@
 
   function cleanupCall() {
     clearOfferWatchdog();
+    stopVideoHealthWatch();
     streamPending = false;
     streamActive = false;
     pc?.close();
@@ -429,7 +516,7 @@
         const selfWatching = list.some((v) => v.viewerId === viewerId && v.status === 'watching');
         if (anyoneWatching || selfWatching) {
           markStreamLive();
-          if (!els.remoteVideo?.srcObject) beginStreamConnect();
+          if (!hasHealthyVideo()) beginStreamConnect();
         }
       }
 
@@ -453,7 +540,7 @@
       if (msg.type === 'relay-online') {
         relayOnline = true;
         updateWaitingState();
-        if (connected && !els.remoteVideo?.srcObject) {
+        if (connected && !hasHealthyVideo()) {
           beginStreamConnect();
         }
       }
@@ -463,12 +550,17 @@
       }
 
       if (msg.type === 'offer') {
+        const now = Date.now();
+        if (hasHealthyVideo() && now - lastOfferAt < 15000) {
+          return;
+        }
+        lastOfferAt = now;
         clearOfferWatchdog();
         if (pc) {
           pc.close();
           pc = null;
         }
-        pc = CasterWebRTCViewer.createPeerConnection(onStreamActive);
+        pc = CasterWebRTCViewer.createPeerConnection(onStreamActive, onStreamLost);
         CasterWebRTCViewer.bindIce(pc, ws, viewerId);
         try {
           await CasterWebRTCViewer.handleOffer(pc, ws, msg, viewerId);
@@ -488,16 +580,20 @@
 
       if (msg.type === 'stream-started') {
         markStreamLive();
-        showStreamConnectingUi();
-        scrollToVideo();
-        if (!els.remoteVideo?.srcObject) beginStreamConnect();
+        if (!hasHealthyVideo()) {
+          showStreamConnectingUi();
+          scrollToVideo();
+          beginStreamConnect();
+        }
       }
 
       if (msg.type === 'stream-starting') {
         markStreamLive();
-        showStreamConnectingUi();
-        scrollToVideo();
-        if (!els.remoteVideo?.srcObject) beginStreamConnect();
+        if (!hasHealthyVideo()) {
+          showStreamConnectingUi();
+          scrollToVideo();
+          beginStreamConnect();
+        }
       }
 
       if (msg.type === 'stop-stream') {

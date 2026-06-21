@@ -4,9 +4,32 @@
 (function () {
   const ICE = window.CASTER_CONFIG?.ICE_SERVERS || [{ urls: 'stun:stun.l.google.com:19302' }];
 
-  function createPeerConnection(onTrack) {
-    const pc = new RTCPeerConnection({ iceServers: ICE });
-    pc.ontrack = (e) => onTrack(e.streams[0]);
+  function createPeerConnection(onTrack, onTrackLost) {
+    const pc = new RTCPeerConnection({ iceServers: ICE, bundlePolicy: 'max-bundle' });
+    const seenStreamIds = new Set();
+
+    function deliverTrack(event) {
+      const stream = event.streams?.[0] || new MediaStream([event.track]);
+      if (event.streams?.[0]?.id) {
+        if (seenStreamIds.has(event.streams[0].id)) return;
+        seenStreamIds.add(event.streams[0].id);
+      }
+      onTrack(stream, event.track);
+      event.track.onunmute = () => onTrack(stream, event.track);
+      event.track.onended = () => onTrackLost?.(stream, event.track);
+    }
+
+    pc.ontrack = deliverTrack;
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        onTrackLost?.(null, null);
+      }
+    };
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+        onTrackLost?.(null, null);
+      }
+    };
     return pc;
   }
 

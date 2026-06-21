@@ -4972,11 +4972,11 @@ final class CompanionViewModel: ObservableObject {
             pendingViewerIds.insert(viewerId)
             return
         }
+        if castWebRTC.hasViewer(viewerId) { return }
         castWebRTC.prepareFactory()
         castWebRTC.attach(signaling: relaySignaling)
         castWebRTC.setAudioEnabled(CastAudioManager.shared.isPermissionConfirmed)
         castWebRTC.startStream()
-        castWebRTC.removeViewer(viewerId: viewerId)
         castWebRTC.addViewer(viewerId: viewerId)
     }
 
@@ -5002,8 +5002,9 @@ final class CompanionViewModel: ObservableObject {
             ids.insert(viewer.id)
         }
         for viewerId in ids {
-            castWebRTC.removeViewer(viewerId: viewerId)
-            castWebRTC.addViewer(viewerId: viewerId)
+            if !castWebRTC.hasViewer(viewerId) {
+                castWebRTC.addViewer(viewerId: viewerId)
+            }
         }
         pendingViewerIds.removeAll()
     }
@@ -5208,8 +5209,6 @@ final class CompanionViewModel: ObservableObject {
                 beginDesktopStreamIfReady()
 
                 relaySignaling.sendSignal(type: "stream-started", payload: ["source": "glasses"])
-                beginDesktopStreamIfReady()
-
                 relaySignaling.status = "Live casting — tap Stop when done"
 
                 while !Task.isCancelled && isLiveCastActive && cameraStream != nil {

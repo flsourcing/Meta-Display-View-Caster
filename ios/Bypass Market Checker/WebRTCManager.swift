@@ -63,6 +63,10 @@ final class WebRTCManager: NSObject {
         ensureSharedAudioTrack()
     }
 
+    func hasViewer(_ viewerId: String) -> Bool {
+        viewerConnections[viewerId] != nil
+    }
+
     func addViewer(viewerId: String) {
         ensureSharedVideoTrack()
         ensureSharedAudioTrack()
