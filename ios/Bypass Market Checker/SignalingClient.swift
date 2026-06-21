@@ -26,6 +26,17 @@ struct CastChatMessage: Identifiable, Equatable {
     var isGif: Bool { kind == "gif" }
     var isImage: Bool { kind == "image" }
 
+    var mediaURL: URL? {
+        if isGif {
+            if let gifUrl, let url = URL(string: gifUrl) { return url }
+            if text.hasPrefix("http"), let url = URL(string: text) { return url }
+        }
+        if isImage {
+            if let imageUrl, let url = URL(string: imageUrl) { return url }
+        }
+        return nil
+    }
+
     var previewText: String {
         if isGif { return "Sent a GIF" }
         if isImage { return "Sent a photo" }
@@ -126,7 +137,7 @@ final class SignalingClient: ObservableObject {
 
     func deleteChatMessage(id: String) {
         sendSignal(type: "delete-chat-message", payload: ["messageId": id])
-        chatMessages.removeAll { $0.id == id }
+        setChatMessages(chatMessages.filter { $0.id != id })
     }
 
     func syncChatHistory() {
@@ -273,8 +284,14 @@ final class SignalingClient: ObservableObject {
         let name = json["name"] as? String ?? "Guest"
         let kind = json["kind"] as? String ?? "text"
         let text = json["text"] as? String ?? ""
-        let gifUrl = json["gifUrl"] as? String
-        let imageUrl = json["imageUrl"] as? String
+        var gifUrl = json["gifUrl"] as? String
+        var imageUrl = json["imageUrl"] as? String
+        if kind == "gif", gifUrl == nil, text.hasPrefix("http") {
+            gifUrl = text
+        }
+        if kind == "image", imageUrl == nil, text.hasPrefix("http") {
+            imageUrl = text
+        }
         return CastChatMessage(
             id: id,
             viewerId: viewerId,
@@ -291,13 +308,19 @@ final class SignalingClient: ObservableObject {
         chatMessages = raw.compactMap { parseChatMessage($0) }
     }
 
+    private func setChatMessages(_ messages: [CastChatMessage]) {
+        chatMessages = messages
+    }
+
     private func appendChatMessage(_ json: [String: Any]) {
         guard let message = parseChatMessage(json) else { return }
         if chatMessages.contains(where: { $0.id == message.id }) { return }
-        chatMessages.append(message)
-        if chatMessages.count > 100 {
-            chatMessages.removeFirst(chatMessages.count - 100)
+        var updated = chatMessages
+        updated.append(message)
+        if updated.count > 100 {
+            updated.removeFirst(updated.count - 100)
         }
+        setChatMessages(updated)
     }
 
     private func applyViewerList(_ json: [String: Any]) {
@@ -403,7 +426,7 @@ final class SignalingClient: ObservableObject {
             }
         case "chat-message-deleted":
             if let id = json["id"] as? String {
-                chatMessages.removeAll { $0.id == id }
+                setChatMessages(chatMessages.filter { $0.id != id })
             }
         case "glasses-joined":
             glassesLinked = true

@@ -579,8 +579,8 @@ wss.on('connection', (ws) => {
           name: viewer?.name || 'Guest',
           text: kind === 'gif' ? gifUrl : kind === 'image' ? '[photo]' : text,
           kind,
-          gifUrl: kind === 'gif' ? gifUrl : undefined,
-          imageUrl: kind === 'image' ? imageUrl : undefined,
+          gifUrl: kind === 'gif' ? gifUrl : null,
+          imageUrl: kind === 'image' ? imageUrl : null,
           at: Date.now(),
         };
         pushChatMessage(session, payload);

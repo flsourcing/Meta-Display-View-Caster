@@ -149,63 +149,56 @@ struct CastHomeView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 8)
             } else {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(signaling.chatMessages) { message in
-                            HStack(alignment: .top, spacing: 10) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(message.name)
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(.white.opacity(0.9))
-                                    if message.isImage, let urlString = message.imageUrl, let url = URL(string: urlString) {
-                                        AsyncImage(url: url) { phase in
-                                            switch phase {
-                                            case .success(let image):
-                                                image
-                                                    .resizable()
-                                                    .scaledToFill()
-                                            case .failure:
-                                                Text("Sent a photo")
-                                                    .font(.caption)
-                                                    .foregroundStyle(.white.opacity(0.7))
-                                            default:
-                                                ProgressView()
-                                                    .controlSize(.small)
-                                            }
-                                        }
-                                        .frame(width: 56, height: 56)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    } else {
-                                        Text(message.previewText)
-                                            .font(.caption)
-                                            .foregroundStyle(.white.opacity(0.7))
-                                            .lineLimit(2)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            ForEach(signaling.chatMessages) { message in
+                                HStack(alignment: .top, spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(message.name)
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(.white.opacity(0.9))
+                                        chatMessagePreview(message)
                                     }
+                                    Spacer(minLength: 8)
+                                    Button {
+                                        signaling.deleteChatMessage(id: message.id)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.caption.weight(.semibold))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .foregroundStyle(.red.opacity(0.9))
+                                    .accessibilityLabel("Delete message from \(message.name)")
                                 }
-                                Spacer(minLength: 8)
-                                Button {
-                                    signaling.deleteChatMessage(id: message.id)
-                                } label: {
-                                    Image(systemName: "trash")
-                                        .font(.caption.weight(.semibold))
-                                }
-                                .buttonStyle(.plain)
-                                .foregroundStyle(.red.opacity(0.9))
-                                .accessibilityLabel("Delete message from \(message.name)")
-                            }
-                            .padding(.vertical, 8)
+                                .id(message.id)
+                                .padding(.vertical, 8)
 
-                            if message.id != signaling.chatMessages.last?.id {
-                                Divider().overlay(Color.white.opacity(0.08))
+                                if message.id != signaling.chatMessages.last?.id {
+                                    Divider().overlay(Color.white.opacity(0.08))
+                                }
                             }
                         }
                     }
+                    .frame(maxHeight: 200)
+                    .onChange(of: signaling.chatMessages.count) { _, _ in
+                        scrollChatToLatest(proxy)
+                    }
+                    .onChange(of: signaling.chatMessages.last?.id) { _, _ in
+                        scrollChatToLatest(proxy)
+                    }
                 }
-                .frame(maxHeight: 200)
             }
         }
         .padding(12)
         .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func scrollChatToLatest(_ proxy: ScrollViewProxy) {
+        guard let lastId = signaling.chatMessages.last?.id else { return }
+        withAnimation(.easeOut(duration: 0.2)) {
+            proxy.scrollTo(lastId, anchor: .bottom)
+        }
     }
 
     private var castPreviewPanel: some View {
@@ -263,6 +256,34 @@ struct CastHomeView: View {
             Text(hint)
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.55))
+        }
+    }
+
+    @ViewBuilder
+    private func chatMessagePreview(_ message: CastChatMessage) -> some View {
+        if let url = message.mediaURL {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                case .failure:
+                    Text(message.previewText)
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.7))
+                default:
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+            .frame(width: 56, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        } else {
+            Text(message.previewText)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.7))
+                .lineLimit(3)
         }
     }
 }
