@@ -89,7 +89,7 @@ final class CastAudioManager {
         try session.setCategory(
             .playAndRecord,
             mode: .videoChat,
-            options: [.allowBluetoothHFP, .defaultToSpeaker, .mixWithOthers]
+            options: [.allowBluetooth, .defaultToSpeaker, .mixWithOthers]
         )
         try session.setActive(true, options: .notifyOthersOnDeactivation)
 
