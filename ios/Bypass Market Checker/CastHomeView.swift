@@ -45,9 +45,17 @@ struct CastHomeView: View {
 
             if !signaling.viewerRoster.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Viewers")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.85))
+                    HStack {
+                        Text("Viewers")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.85))
+                        Spacer()
+                        Button("Wipe Live Chat") {
+                            viewModel.wipeLiveChat()
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                    }
 
                     ForEach(signaling.viewerRoster) { viewer in
                         HStack {
@@ -64,6 +72,11 @@ struct CastHomeView: View {
                 }
                 .padding(12)
                 .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+            } else {
+                Button("Wipe Live Chat") {
+                    viewModel.wipeLiveChat()
+                }
+                .buttonStyle(SecondaryButtonStyle())
             }
 
             Button {

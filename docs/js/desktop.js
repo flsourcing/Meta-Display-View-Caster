@@ -37,7 +37,23 @@
     chatForm: document.getElementById('chat-form'),
     chatInput: document.getElementById('chat-input'),
     chatSend: document.getElementById('chat-send'),
+    gifBtn: document.getElementById('gif-btn'),
+    gifPanel: document.getElementById('gif-panel'),
+    gifPresets: document.getElementById('gif-presets'),
+    gifUrlInput: document.getElementById('gif-url-input'),
+    gifUrlSend: document.getElementById('gif-url-send'),
   };
+
+  const GIF_PRESETS = [
+    { url: 'https://media.giphy.com/media/ICOgCUypo64o/giphy.gif', label: 'Celebrate' },
+    { url: 'https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif', label: 'Clap' },
+    { url: 'https://media.giphy.com/media/3o7aCTPPm4OHfRLSH6/giphy.gif', label: 'Wow' },
+    { url: 'https://media.giphy.com/media/26BRuo6sKejj0c9Vm/giphy.gif', label: 'Love' },
+    { url: 'https://media.giphy.com/media/l3q2K5jinAlChoCLS/giphy.gif', label: 'Laugh' },
+    { url: 'https://media.giphy.com/media/3o6Zt4HU9qdCo5XaBa/giphy.gif', label: 'Dance' },
+    { url: 'https://media.giphy.com/media/13CoXDiaCcGyqI/giphy.gif', label: 'Thumbs up' },
+    { url: 'https://media.giphy.com/media/5GoVLqeAw9FaBiNGxD/giphy.gif', label: 'Party' },
+  ];
 
   let ws = null;
   let pc = null;
@@ -49,6 +65,8 @@
   let passwordBusy = false;
   let joinBusy = false;
   const chatSeen = new Set();
+  let offerWatchdog = null;
+  let controlsHideTimer = null;
 
   const params = new URLSearchParams(location.search);
   const urlPassword = params.get('password') || params.get('p') || '';
@@ -157,11 +175,20 @@
     name.className = 'chat-message-name';
     name.textContent = msg.name || 'Guest';
 
-    const text = document.createElement('span');
-    text.className = 'chat-message-text';
-    text.textContent = msg.text || '';
+    if (msg.kind === 'gif' && (msg.gifUrl || msg.text)) {
+      const img = document.createElement('img');
+      img.className = 'chat-message-gif';
+      img.src = msg.gifUrl || msg.text;
+      img.alt = 'GIF';
+      img.loading = 'lazy';
+      item.append(name, img);
+    } else {
+      const text = document.createElement('span');
+      text.className = 'chat-message-text';
+      text.textContent = msg.text || '';
+      item.append(name, text);
+    }
 
-    item.append(name, text);
     els.chatMessages.appendChild(item);
     scrollChatToBottom();
   }
@@ -179,6 +206,79 @@
   function sendChatMessage(text) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'chat-message', text }));
+  }
+
+  function sendChatGif(gifUrl) {
+    const url = String(gifUrl || '').trim();
+    if (!url || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'chat-message', kind: 'gif', gifUrl: url }));
+    els.gifPanel?.classList.add('hidden');
+    els.gifUrlInput.value = '';
+  }
+
+  function requestViewerOffer() {
+    if (!ws || ws.readyState !== WebSocket.OPEN || !viewerId) return;
+    ws.send(JSON.stringify({ type: 'viewer-needs-offer' }));
+  }
+
+  function clearOfferWatchdog() {
+    if (offerWatchdog) {
+      clearTimeout(offerWatchdog);
+      offerWatchdog = null;
+    }
+  }
+
+  function scheduleOfferWatchdog() {
+    clearOfferWatchdog();
+    offerWatchdog = setTimeout(() => {
+      if (!els.remoteVideo?.srcObject && relayOnline) {
+        requestViewerOffer();
+        scheduleOfferWatchdog();
+      }
+    }, 3500);
+  }
+
+  function beginStreamConnect() {
+    if (els.remoteVideo?.srcObject) return;
+    cleanupCall();
+    requestViewerOffer();
+    scheduleOfferWatchdog();
+  }
+
+  function updateMuteButton() {
+    if (!els.unmuteBtn || !els.remoteVideo) return;
+    const muted = els.remoteVideo.muted;
+    els.unmuteBtn.textContent = muted ? '🔇' : '🔊';
+    els.unmuteBtn.classList.toggle('is-unmuted', !muted);
+    els.unmuteBtn.title = muted ? 'Unmute' : 'Mute';
+    els.unmuteBtn.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+  }
+
+  function showVideoControls() {
+    if (!els.videoWrap) return;
+    els.videoWrap.classList.add('show-controls');
+    if (controlsHideTimer) clearTimeout(controlsHideTimer);
+    controlsHideTimer = setTimeout(() => {
+      els.videoWrap?.classList.remove('show-controls');
+    }, 3200);
+  }
+
+  function initGifPresets() {
+    if (!els.gifPresets) return;
+    els.gifPresets.innerHTML = '';
+    for (const preset of GIF_PRESETS) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'gif-preset-btn';
+      btn.title = preset.label;
+      const img = document.createElement('img');
+      img.src = preset.url;
+      img.alt = preset.label;
+      img.loading = 'lazy';
+      btn.appendChild(img);
+      btn.addEventListener('click', () => sendChatGif(preset.url));
+      els.gifPresets.appendChild(btn);
+    }
   }
 
   function scrollToVideo() {
@@ -203,16 +303,20 @@
   }
 
   function onStreamActive(stream) {
+    clearOfferWatchdog();
     els.remoteVideo.srcObject = stream;
     els.videoPlaceholder.classList.add('hidden');
+    els.remoteVideo.muted = true;
+    updateMuteButton();
     const hasAudio = stream.getAudioTracks().length > 0;
     if (hasAudio) {
-      els.captureHint.textContent = 'Live stream includes audio — tap Tap for sound if needed.';
+      els.captureHint.textContent = 'Tap the stream for sound and fullscreen controls.';
     } else {
       els.captureHint.textContent = '';
     }
     setViewerStatus('connected', `Live stream active — ${viewerName}`);
     scrollToVideo();
+    showVideoControls();
   }
 
   function showUsernameStep() {
@@ -238,6 +342,7 @@
   }
 
   function cleanupCall() {
+    clearOfferWatchdog();
     pc?.close();
     pc = null;
     els.remoteVideo.srcObject = null;
@@ -257,9 +362,16 @@
         appendChatMessage(msg);
       }
 
+      if (msg.type === 'chat-cleared') {
+        loadChatHistory([]);
+      }
+
       if (msg.type === 'relay-online') {
         relayOnline = true;
         updateWaitingState();
+        if (connected && !els.remoteVideo?.srcObject) {
+          beginStreamConnect();
+        }
       }
 
       if (msg.type === 'glasses-joined') {
@@ -267,11 +379,21 @@
       }
 
       if (msg.type === 'offer') {
-        if (!pc) {
-          pc = CasterWebRTCViewer.createPeerConnection(onStreamActive);
-          CasterWebRTCViewer.bindIce(pc, ws, viewerId);
+        clearOfferWatchdog();
+        if (pc) {
+          pc.close();
+          pc = null;
         }
-        await CasterWebRTCViewer.handleOffer(pc, ws, msg, viewerId);
+        pc = CasterWebRTCViewer.createPeerConnection(onStreamActive);
+        CasterWebRTCViewer.bindIce(pc, ws, viewerId);
+        try {
+          await CasterWebRTCViewer.handleOffer(pc, ws, msg, viewerId);
+        } catch (err) {
+          console.warn('Offer handling failed, retrying…', err);
+          cleanupCall();
+          requestViewerOffer();
+          scheduleOfferWatchdog();
+        }
       }
 
       if (msg.type === 'ice-candidate' && pc) {
@@ -282,12 +404,14 @@
         setVideoPlaceholder(PLACEHOLDER.starting);
         setViewerStatus('waiting', 'Stream starting…');
         scrollToVideo();
+        if (!els.remoteVideo?.srcObject) beginStreamConnect();
       }
 
       if (msg.type === 'stream-starting') {
         setVideoPlaceholder(PLACEHOLDER.starting);
         setViewerStatus('waiting', 'Glasses camera starting…');
         scrollToVideo();
+        if (!els.remoteVideo?.srcObject) beginStreamConnect();
       }
 
       if (msg.type === 'stop-stream') {
@@ -392,9 +516,10 @@
         streaming: joined.streaming,
       });
       if (joined.streaming) {
-        setVideoPlaceholder(PLACEHOLDER.noStream);
+        setVideoPlaceholder(PLACEHOLDER.starting);
         setViewerStatus('waiting', 'Stream in progress — connecting video…');
         scrollToVideo();
+        beginStreamConnect();
       }
     } catch (err) {
       let msg = err.message || 'Could not join.';
@@ -419,16 +544,44 @@
     if (e.key === 'Enter' && !joinBusy) joinWithUsername();
   });
 
-  els.unmuteBtn?.addEventListener('click', () => {
-    els.remoteVideo.muted = false;
-    els.unmuteBtn.textContent = 'Sound on';
-    els.unmuteBtn.disabled = true;
+  els.unmuteBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    els.remoteVideo.muted = !els.remoteVideo.muted;
+    updateMuteButton();
+    showVideoControls();
   });
 
-  els.fullscreenBtn?.addEventListener('click', enterFullscreen);
-  els.remoteVideo?.addEventListener('click', () => {
-    if (els.remoteVideo.srcObject) enterFullscreen();
+  els.fullscreenBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    enterFullscreen();
+    showVideoControls();
   });
+
+  els.videoWrap?.addEventListener('click', (e) => {
+    if (e.target.closest('.video-icon-btn')) return;
+    if (els.remoteVideo?.srcObject) showVideoControls();
+  });
+
+  els.gifBtn?.addEventListener('click', () => {
+    els.gifPanel?.classList.toggle('hidden');
+    if (!els.gifPanel?.classList.contains('hidden')) {
+      els.gifUrlInput?.focus();
+    }
+  });
+
+  els.gifUrlSend?.addEventListener('click', () => {
+    sendChatGif(els.gifUrlInput?.value || '');
+  });
+
+  els.gifUrlInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      sendChatGif(els.gifUrlInput?.value || '');
+    }
+  });
+
+  initGifPresets();
+  updateMuteButton();
 
   els.chatForm?.addEventListener('submit', (e) => {
     e.preventDefault();

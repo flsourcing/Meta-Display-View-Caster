@@ -2626,6 +2626,7 @@ final class CompanionViewModel: ObservableObject {
         setupStep = .registration
         registrationSetupStatus = .waiting
         cameraSetupStatus = .waiting
+        audioSetupStatus = .waiting
         glassesConnectionStatus = .disconnected
         showConnectionPopover = false
         showSettings = false
@@ -4939,6 +4940,11 @@ final class CompanionViewModel: ObservableObject {
                 self?.castWebRTC.removeViewer(viewerId: viewerId)
             }
         }
+        relaySignaling.onViewerNeedsOffer = { [weak self] viewerId in
+            Task { @MainActor in
+                self?.refreshViewerStream(viewerId)
+            }
+        }
         relaySignaling.onGlassesJoined = { [weak self] in
             Task { @MainActor in
                 self?.startCastCompanionBridge()
@@ -4961,6 +4967,19 @@ final class CompanionViewModel: ObservableObject {
         }
     }
 
+    private func refreshViewerStream(_ viewerId: String) {
+        guard isLiveCasting, cameraStream != nil else {
+            pendingViewerIds.insert(viewerId)
+            return
+        }
+        castWebRTC.prepareFactory()
+        castWebRTC.attach(signaling: relaySignaling)
+        castWebRTC.setAudioEnabled(CastAudioManager.shared.isPermissionConfirmed)
+        castWebRTC.startStream()
+        castWebRTC.removeViewer(viewerId: viewerId)
+        castWebRTC.addViewer(viewerId: viewerId)
+    }
+
     private func registerViewerForStream(_ viewerId: String) {
         if isLiveCasting, cameraStream != nil {
             castWebRTC.prepareFactory()
@@ -4973,15 +4992,24 @@ final class CompanionViewModel: ObservableObject {
         }
     }
 
-    private func connectPendingViewers() {
+    private func connectAllViewers() {
         castWebRTC.prepareFactory()
         castWebRTC.attach(signaling: relaySignaling)
         castWebRTC.setAudioEnabled(CastAudioManager.shared.isPermissionConfirmed)
         castWebRTC.startStream()
-        for viewerId in pendingViewerIds {
+        var ids = Set(pendingViewerIds)
+        for viewer in relaySignaling.viewerRoster {
+            ids.insert(viewer.id)
+        }
+        for viewerId in ids {
+            castWebRTC.removeViewer(viewerId: viewerId)
             castWebRTC.addViewer(viewerId: viewerId)
         }
         pendingViewerIds.removeAll()
+    }
+
+    private func connectPendingViewers() {
+        connectAllViewers()
     }
 
     /// Same device session + camera path as image lookup capture, but keeps video streaming.
@@ -5117,6 +5145,10 @@ final class CompanionViewModel: ObservableObject {
         configureCastRelay()
         relaySignaling.sendSignal(type: "stream-starting")
         await performLiveCast(triggeredByGlasses: false)
+    }
+
+    func wipeLiveChat() {
+        relaySignaling?.clearLiveChat()
     }
 
     func userStopLiveCast() {

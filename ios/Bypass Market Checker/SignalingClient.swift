@@ -47,6 +47,7 @@ final class SignalingClient: ObservableObject {
     var onDesktopJoined: (() -> Void)?
     var onViewerJoined: ((String) -> Void)?
     var onViewerLeft: ((String) -> Void)?
+    var onViewerNeedsOffer: ((String) -> Void)?
 
     init(serverURL: URL) {
         self.serverURL = serverURL
@@ -93,6 +94,10 @@ final class SignalingClient: ObservableObject {
         var body = payload
         body["type"] = type
         send(body)
+    }
+
+    func clearLiveChat() {
+        sendSignal(type: "clear-chat")
     }
 
     func sendOffer(_ sdp: String, viewerId: String) {
@@ -305,6 +310,10 @@ final class SignalingClient: ObservableObject {
                     refreshViewerStatusText()
                 }
                 onViewerLeft?(vid)
+            }
+        case "viewer-needs-offer":
+            if let vid = json["viewerId"] as? String {
+                onViewerNeedsOffer?(vid)
             }
         case "glasses-joined":
             glassesLinked = true

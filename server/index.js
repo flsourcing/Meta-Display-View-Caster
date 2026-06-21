@@ -271,6 +271,18 @@ wss.on('connection', (ws) => {
         if (session.desktopWs) {
           send(session.desktopWs, { type: 'relay-online', ...sessionPayload(session) });
         }
+        const viewers = buildViewerList(session);
+        for (const [vid, viewer] of session.viewers.entries()) {
+          send(ws, {
+            type: 'viewer-joined',
+            viewerId: vid,
+            name: viewer.name,
+            status: viewer.status || (session.streaming ? 'watching' : 'waiting'),
+            viewerCount: session.viewers.size,
+            streaming: session.streaming,
+            viewers,
+          });
+        }
         break;
       }
 
@@ -371,18 +383,46 @@ wss.on('connection', (ws) => {
           return;
         }
         const text = String(msg.text || '').trim().slice(0, 500);
-        if (!text) return;
+        const kind = msg.kind === 'gif' ? 'gif' : 'text';
+        const gifUrl = kind === 'gif' ? String(msg.gifUrl || msg.text || '').trim().slice(0, 500) : '';
+        if (kind === 'text' && !text) return;
+        if (kind === 'gif' && !gifUrl) return;
         const viewer = session.viewers.get(activeViewerId);
         const payload = {
           type: 'chat-message',
           id: randomUUID(),
           viewerId: activeViewerId,
           name: viewer?.name || 'Guest',
-          text,
+          text: kind === 'gif' ? gifUrl : text,
+          kind,
+          gifUrl: kind === 'gif' ? gifUrl : undefined,
           at: Date.now(),
         };
         pushChatMessage(session, payload);
         broadcast(session, payload);
+        break;
+      }
+
+      case 'viewer-needs-offer': {
+        const activeSessionId = ws.castSessionId || sessionId;
+        const activeRole = ws.castRole || role;
+        const activeViewerId = ws.castViewerId || viewerId;
+        const session = getSession(activeSessionId);
+        if (!session || activeRole !== 'viewer' || !activeViewerId) break;
+        if (session.relayWs) {
+          send(session.relayWs, { type: 'viewer-needs-offer', viewerId: activeViewerId });
+        }
+        break;
+      }
+
+      case 'clear-chat': {
+        const session = getSession(sessionId);
+        if (!session || role !== 'relay') {
+          send(ws, { type: 'error', message: 'Only the caster can clear chat.' });
+          return;
+        }
+        session.chatHistory = [];
+        broadcast(session, { type: 'chat-cleared' });
         break;
       }
 
