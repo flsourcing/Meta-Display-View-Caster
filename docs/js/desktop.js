@@ -5,12 +5,22 @@
   const useWS = !!(window.CASTER_CONFIG?.SIGNALING_URL || window.CASTER_CONFIG?.SIGNALING_HOST);
   const defaultPassword = window.CASTER_CONFIG?.VIEWER_PASSWORD || 'Wedding';
 
-  const PLACEHOLDER = {
-    noRelay: 'Waiting for caster — open View Caster on the phone',
-    noStream: 'Waiting for Live Stream from glasses…',
-    starting: 'Glasses camera starting…',
-    live: '',
-  };
+  const WAITING_CAST = 'Waiting For Live Cast';
+
+  function waitingStatusText() {
+    return viewerName ? `Hi ${viewerName} — Waiting For Live Cast` : WAITING_CAST;
+  }
+
+  function liveStatusText() {
+    return viewerName ? `Hi ${viewerName} — Stream is Live!` : 'Stream is Live!';
+  }
+
+  function showWaitingCastUi() {
+    if (hasHealthyVideo()) return;
+    setVideoPlaceholder(WAITING_CAST);
+    setViewerStatus('waiting', waitingStatusText());
+    if (els.captureHint) els.captureHint.textContent = '';
+  }
 
   const els = {
     passwordSection: document.getElementById('password-section'),
@@ -108,26 +118,7 @@
   }
 
   function updateWaitingState() {
-    if (hasHealthyVideo()) return;
-    if (streamPending || streamActive) {
-      setVideoPlaceholder(PLACEHOLDER.starting);
-      setViewerStatus('waiting', streamActive ? 'Connecting to live stream…' : 'Glasses camera starting…');
-      if (els.captureHint) els.captureHint.textContent = '';
-      return;
-    }
-    if (!relayOnline) {
-      setVideoPlaceholder(PLACEHOLDER.noRelay);
-      setViewerStatus('waiting', `Hi ${viewerName} — waiting for caster phone…`);
-      if (els.captureHint) {
-        els.captureHint.textContent = 'The cast window will show video automatically when Live Stream starts.';
-      }
-      return;
-    }
-    setVideoPlaceholder(PLACEHOLDER.noStream);
-    setViewerStatus('waiting', `Hi ${viewerName} — caster connected, waiting for live stream…`);
-    if (els.captureHint) {
-      els.captureHint.textContent = 'Start Live Stream on the glasses when ready.';
-    }
+    showWaitingCastUi();
   }
 
   function showPasswordError(msg) {
@@ -283,7 +274,7 @@
       if (!streamActive && !streamPending && !els.remoteVideo?.srcObject) return;
       noVideoStreak += 1;
       if (noVideoStreak >= 2) {
-        forceStreamReconnect('Video stalled — reconnecting…');
+        forceStreamReconnect();
       }
     }, 3000);
   }
@@ -296,41 +287,33 @@
     noVideoStreak = 0;
   }
 
-  function forceStreamReconnect(reason) {
+  function forceStreamReconnect() {
     stopVideoHealthWatch();
     clearOfferWatchdog();
     pc?.close();
     pc = null;
     if (els.remoteVideo) els.remoteVideo.srcObject = null;
-    markStreamLive();
-    if (reason) {
-      setVideoPlaceholder(PLACEHOLDER.starting);
-      setViewerStatus('waiting', reason);
-    }
+    streamPending = true;
+    streamActive = true;
+    relayOnline = true;
+    showWaitingCastUi();
     requestViewerOffer();
     scheduleOfferWatchdog();
   }
 
   function onStreamLost() {
     if (!streamActive && !streamPending) return;
-    forceStreamReconnect('Stream interrupted — reconnecting…');
-  }
-
-  function showStreamConnectingUi() {
-    streamPending = true;
-    relayOnline = true;
-    setVideoPlaceholder(PLACEHOLDER.starting);
-    setViewerStatus('waiting', streamActive ? 'Connecting to live stream…' : 'Glasses camera starting…');
-    if (els.captureHint) els.captureHint.textContent = '';
+    forceStreamReconnect();
   }
 
   function beginStreamConnect() {
     if (hasHealthyVideo()) return;
     if (els.remoteVideo?.srcObject) {
-      forceStreamReconnect('Refreshing video…');
+      forceStreamReconnect();
       return;
     }
-    showStreamConnectingUi();
+    streamPending = true;
+    relayOnline = true;
     requestViewerOffer();
     scheduleOfferWatchdog();
   }
@@ -353,7 +336,6 @@
         if (live.relayOnline) relayOnline = true;
         if (live.streaming) {
           markStreamLive();
-          showStreamConnectingUi();
           beginStreamConnect();
         } else if (relayOnline) {
           updateWaitingState();
@@ -450,19 +432,7 @@
     } else {
       els.captureHint.textContent = '';
     }
-    const markLive = () => setViewerStatus('connected', `Live stream active — ${viewerName}`);
-    if (els.remoteVideo.videoWidth > 0) {
-      markLive();
-    } else {
-      setViewerStatus('waiting', 'Receiving video…');
-      const waitForFrames = setInterval(() => {
-        if (els.remoteVideo.videoWidth > 0) {
-          clearInterval(waitForFrames);
-          markLive();
-        }
-      }, 400);
-      setTimeout(() => clearInterval(waitForFrames), 12000);
-    }
+    setViewerStatus('connected', liveStatusText());
     scrollToVideo();
     showVideoControls();
     startVideoHealthWatch();
@@ -588,7 +558,6 @@
       if (msg.type === 'stream-started') {
         markStreamLive();
         if (!hasHealthyVideo()) {
-          showStreamConnectingUi();
           scrollToVideo();
           beginStreamConnect();
         }
@@ -597,7 +566,6 @@
       if (msg.type === 'stream-starting') {
         markStreamLive();
         if (!hasHealthyVideo()) {
-          showStreamConnectingUi();
           scrollToVideo();
           beginStreamConnect();
         }
@@ -712,7 +680,6 @@
       startLivePoll();
       if (joined.streaming) {
         markStreamLive();
-        showStreamConnectingUi();
         scrollToVideo();
         beginStreamConnect();
       } else if (joined.relayOnline) {
