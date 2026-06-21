@@ -566,33 +566,37 @@ final class WearablesManager: ObservableObject {
             return true
         }
 
-        return await withTaskGroup(of: Bool.self) { group in
-            group.addTask { @MainActor in
-                for await state in self.sdk.registrationStateStream() {
-                    self.applyRegistrationState(state)
-                    if self.isRegistrationReady(state) {
-                        return true
-                    }
+        let gate = RegistrationWaitGate()
+        let streamTask = Task { @MainActor in
+            for await state in self.sdk.registrationStateStream() {
+                if await gate.isFinished {
+                    return
                 }
-                return false
-            }
-
-            group.addTask { @MainActor in
-                let deadline = Date().addingTimeInterval(timeoutSeconds)
-                while Date() < deadline {
-                    self.applyRegistrationState(self.sdk.registrationState)
-                    if self.isRegistrationReady(self.sdk.registrationState) {
-                        return true
-                    }
-                    try? await Task.sleep(nanoseconds: 250_000_000)
+                self.applyRegistrationState(state)
+                if self.isRegistrationReady(state) {
+                    await gate.finish(true)
+                    return
                 }
-                return self.isRegistrationReady(self.sdk.registrationState)
             }
-
-            let first = await group.next() ?? false
-            group.cancelAll()
-            return first
         }
+
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            applyRegistrationState(sdk.registrationState)
+            if isRegistrationReady(sdk.registrationState) {
+                streamTask.cancel()
+                return true
+            }
+            if await gate.isFinished {
+                streamTask.cancel()
+                return await gate.result
+            }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+
+        streamTask.cancel()
+        applyRegistrationState(sdk.registrationState)
+        return isRegistrationReady(sdk.registrationState)
     }
 
     private func safeCameraPermissionStatus() async -> PermissionStatus? {
@@ -854,5 +858,16 @@ final class WearablesManager: ObservableObject {
                 return detail
             }
         }
+    }
+}
+
+private actor RegistrationWaitGate {
+    private(set) var isFinished = false
+    private(set) var result = false
+
+    func finish(_ value: Bool) {
+        guard !isFinished else { return }
+        isFinished = true
+        result = value
     }
 }
