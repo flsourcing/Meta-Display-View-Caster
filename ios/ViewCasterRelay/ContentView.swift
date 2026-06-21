@@ -305,7 +305,7 @@ struct ContentView: View {
                             isSuccess: model.wearables.registrationSetupStatus == .success,
                             buttonTitle: "Register With Meta AI",
                             buttonIcon: "link",
-                            hint: "1) Toggle ON → Connect in Meta AI. 2) Switch back here. 3) Tap Finish Connection — Meta won't auto-return for sideloaded apps.",
+                            hint: "Tap Connect in Meta AI, then return here. Registration is detected automatically (same as Bypass). Use Finish Connection only if it stays stuck.",
                             disabled: model.wearables.registrationSetupStatus == .success || model.metaBlocked
                         ) {
                             model.connectMetaAI()
@@ -315,7 +315,7 @@ struct ContentView: View {
                             Button {
                                 model.finishMetaConnection()
                             } label: {
-                                Label("Finish Connection", systemImage: "arrow.uturn.backward.circle.fill")
+                                Label("Finish Connection (sideload fallback)", systemImage: "arrow.uturn.backward.circle.fill")
                                     .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.borderedProminent)
@@ -326,6 +326,10 @@ struct ContentView: View {
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                             }
+
+                            Text("SDK state: \(model.wearables.registrationStateName)")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
                         }
 
                         MetaSetupStepView(

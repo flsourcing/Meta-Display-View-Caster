@@ -36,7 +36,6 @@ final class WearablesManager: ObservableObject {
     private var lastHandledURLString: String?
     private var foregroundSyncTask: Task<Void, Never>?
     private var didConfigure = false
-    private var pendingFinishAfterManualReturn = false
     private var isFinishingRegistration = false
 
     var onVideoFrame: ((VideoFrame) -> Void)?
@@ -106,8 +105,14 @@ final class WearablesManager: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.registrationOpenedAt = nil
+                self.refreshSetupProgress()
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
-                await self.onAppBecameActive()
+
+                if self.pendingCameraPermissionRetry {
+                    await self.finishPendingCameraPermissionIfPossible()
+                } else {
+                    self.refreshSetupProgress()
+                }
             }
         }
     }
@@ -141,11 +146,7 @@ final class WearablesManager: ObservableObject {
             NSLog("ViewCaster: handleUrl error: \(error.localizedDescription)")
         }
 
-        _ = await ensureRegistrationComplete()
-        refreshSetupProgress()
-        await finishPendingCameraPermissionIfPossible()
-        _ = await resolveCameraPermissionIfAlreadyGranted()
-        await syncMetaStatus()
+        _ = await waitForRegistrationReady(timeoutSeconds: 10)
         refreshSetupProgress()
     }
 
@@ -350,7 +351,9 @@ final class WearablesManager: ObservableObject {
     }
 
     var needsFinishConnection: Bool {
-        registrationSetupStatus != .success && (metaSetupStarted || registrationAttempted)
+        registrationSetupStatus != .success
+            && (metaSetupStarted || registrationAttempted)
+            && !sdkRegistered
     }
 
     func connectMetaAI() {
@@ -360,26 +363,36 @@ final class WearablesManager: ObservableObject {
             return
         }
         registrationAttempted = true
-        pendingFinishAfterManualReturn = true
         Task { @MainActor in
             do {
                 registrationLabel = "Opening Meta AI registration..."
                 registrationOpenedAt = Date()
                 try await sdk.startRegistration()
                 markMetaSetupStarted()
-                registrationLabel = "Connect in Meta AI, then return here and tap Finish Connection."
+                registrationLabel = "Opened Meta AI. Return here after Connect."
                 unlockCameraStepIfNeeded()
             } catch RegistrationError.alreadyRegistered {
                 registrationOpenedAt = nil
-                pendingFinishAfterManualReturn = false
                 registrationLabel = "Registered with Meta AI."
                 _ = await waitForRegistrationReady(timeoutSeconds: 10)
                 applyRegistrationState(sdk.registrationState)
                 refreshSetupProgress()
                 unlockCameraStepIfNeeded()
             } catch {
-                registrationLabel = "Registration unavailable. Check Meta AI and Developer Mode."
-                lastMetaSyncNote = unavailableHelp(state: sdk.registrationState)
+                if isRegistrationReady(sdk.registrationState) {
+                    registrationOpenedAt = nil
+                    registrationLabel = "Registered with Meta AI."
+                    refreshSetupProgress()
+                    unlockCameraStepIfNeeded()
+                    return
+                }
+                if sdk.registrationState == .unavailable {
+                    registrationLabel = "Registration unavailable. Check Meta AI and Developer Mode."
+                    lastMetaSyncNote = unavailableHelp(state: sdk.registrationState)
+                } else {
+                    registrationLabel = "Registration error: \(error.localizedDescription)"
+                    lastMetaSyncNote = "Complete Connect in Meta AI, then return here."
+                }
                 unlockCameraStepIfNeeded()
             }
         }
@@ -414,11 +427,9 @@ final class WearablesManager: ObservableObject {
 
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         _ = await waitForRegistrationReady(timeoutSeconds: 25)
-        _ = await ensureRegistrationComplete()
         refreshSetupProgress()
 
         if registrationSetupStatus == .success {
-            pendingFinishAfterManualReturn = false
             registrationOpenedAt = nil
         }
     }
@@ -471,13 +482,12 @@ final class WearablesManager: ObservableObject {
         foregroundSyncTask = Task { @MainActor in
             unlockCameraStepIfNeeded()
 
-            if pendingFinishAfterManualReturn && registrationSetupStatus != .success {
-                pendingFinishAfterManualReturn = false
-                await finishRegistrationConnection()
-            } else {
-                _ = await ensureRegistrationComplete()
+            // Match Bypass: poll registrationStateStream when user returns from Meta AI.
+            let timeout: TimeInterval = registrationOpenedAt == nil ? 2 : 10
+            if await waitForRegistrationReady(timeoutSeconds: timeout) {
+                registrationOpenedAt = nil
+                refreshSetupProgress()
             }
-            refreshSetupProgress()
 
             if pendingCameraPermissionRetry {
                 try? await Task.sleep(nanoseconds: 600_000_000)
@@ -513,42 +523,6 @@ final class WearablesManager: ObservableObject {
 
         let timeout: TimeInterval = (registrationOpenedAt != nil || registrationAttempted) ? 10 : 3
         if await waitForRegistrationReady(timeoutSeconds: timeout) {
-            registrationOpenedAt = nil
-            refreshSetupProgress()
-            return true
-        }
-
-        let currentState = sdk.registrationState
-        if currentState == .available, registrationAttempted || metaSetupStarted {
-            do {
-                try await sdk.openDATGlassesAppUpdate()
-                registrationLabel = "In Meta AI, tap View Caster Relay to finish."
-                if await waitForRegistrationReady(timeoutSeconds: 20) {
-                    registrationOpenedAt = nil
-                    refreshSetupProgress()
-                    return true
-                }
-            } catch {
-                NSLog("ViewCaster: ensureRegistration openDAT failed: \(error.localizedDescription)")
-            }
-            do {
-                try await sdk.startRegistration()
-                registrationLabel = "Complete registration in Meta AI, then return here."
-            } catch RegistrationError.alreadyRegistered {
-                if await waitForRegistrationReady(timeoutSeconds: 10) {
-                    registrationOpenedAt = nil
-                    refreshSetupProgress()
-                    return true
-                }
-            } catch {
-                if isRegistrationReady(sdk.registrationState) {
-                    refreshSetupProgress()
-                    return true
-                }
-            }
-        }
-
-        if await waitForRegistrationReady(timeoutSeconds: 8) {
             registrationOpenedAt = nil
             refreshSetupProgress()
             return true
@@ -592,15 +566,33 @@ final class WearablesManager: ObservableObject {
             return true
         }
 
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
-        while Date() < deadline {
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            applyRegistrationState(sdk.registrationState)
-            if isRegistrationReady(sdk.registrationState) {
-                return true
+        return await withTaskGroup(of: Bool.self) { group in
+            group.addTask { @MainActor in
+                for await state in self.sdk.registrationStateStream() {
+                    self.applyRegistrationState(state)
+                    if self.isRegistrationReady(state) {
+                        return true
+                    }
+                }
+                return false
             }
+
+            group.addTask { @MainActor in
+                let deadline = Date().addingTimeInterval(timeoutSeconds)
+                while Date() < deadline {
+                    self.applyRegistrationState(self.sdk.registrationState)
+                    if self.isRegistrationReady(self.sdk.registrationState) {
+                        return true
+                    }
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                }
+                return self.isRegistrationReady(self.sdk.registrationState)
+            }
+
+            let first = await group.next() ?? false
+            group.cancelAll()
+            return first
         }
-        return isRegistrationReady(sdk.registrationState)
     }
 
     private func safeCameraPermissionStatus() async -> PermissionStatus? {
