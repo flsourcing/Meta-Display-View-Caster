@@ -48,7 +48,7 @@ struct MetaSettingsView: View {
             }
             .font(.footnote)
 
-            Text("Complete registration in Meta AI, then return here. Same flow as Bypass Market Checker.")
+            Text("Complete registration in Meta AI, then return here. Dev Mode IPA (MetaAppID=0) required for sideload unless portal is configured.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

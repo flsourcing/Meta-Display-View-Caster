@@ -47,6 +47,35 @@ final class BypassMetaCompanion: ObservableObject {
         await validateCameraPermissionFlag()
         _ = await resolveCameraPermissionIfAlreadyGranted(shouldShowMessage: false)
         refreshSetupProgress()
+        applyInitialRegistrationState()
+    }
+
+    private func applyInitialRegistrationState() {
+        let state = Wearables.shared.registrationState
+        handleRegistrationStateChange(state)
+        if state == .unavailable {
+            wearablesStatus = unavailableGuidance()
+        }
+    }
+
+    private func unavailableGuidance() -> String {
+        if isDeveloperModeConfig {
+            return """
+            Registration unavailable. Enable Developer Mode in Meta AI:
+            Settings → App Info → tap App version 7× → Developer Mode ON.
+            Also enable Developer Mode on your glasses in Meta AI.
+            """
+        }
+        return """
+        Registration unavailable — SDK rejected this app's Meta credentials.
+        Your wearables.developer.meta.com project must match exactly:
+        Bundle \(runtimeBundleID), Team \(datTeamID), scheme viewcaster://
+        Or install a Dev Mode IPA (MetaAppID=0) from GitHub Releases.
+        """
+    }
+
+    private var isDeveloperModeConfig: Bool {
+        datMetaAppID == "0"
     }
 
     func onAppWillEnterForeground() {
@@ -103,7 +132,7 @@ final class BypassMetaCompanion: ObservableObject {
         case .available:
             wearablesStatus = "Register the app, allow camera, then capture from the glasses."
         case .unavailable:
-            wearablesStatus = "Registration unavailable. Check Meta AI and Developer Mode."
+            wearablesStatus = unavailableGuidance()
         @unknown default:
             break
         }
@@ -252,9 +281,12 @@ final class BypassMetaCompanion: ObservableObject {
             permissionText = "error: \(error.localizedDescription)"
         }
 
-        let registrationText = String(describing: Wearables.shared.registrationState)
+        let state = Wearables.shared.registrationState
+        let registrationText = "\(state) — \(state.description)"
+        let modeText = isDeveloperModeConfig ? "Developer Mode (MetaAppID=0)" : "Production"
         let monitor = bluetoothMonitorInstance()
         wearablesStatus = """
+        Mode: \(modeText)
         MetaAppID: \(datMetaAppID)
         ClientToken: \(maskedToken(datClientToken))
         TeamID(plist): \(datTeamID)
@@ -279,8 +311,12 @@ final class BypassMetaCompanion: ObservableObject {
 
     @discardableResult
     private func validateDATConfiguration(reportAsError: Bool = true) -> Bool {
-        if datMetaAppID == "0" || datClientToken == "<missing>" || datClientToken.isEmpty {
-            let msg = "MWDAT MetaAppID/ClientToken missing in this IPA. Reinstall latest GitHub release."
+        if isDeveloperModeConfig {
+            return true
+        }
+        if datMetaAppID == "<missing>" || datMetaAppID.isEmpty
+            || datClientToken == "<missing>" || datClientToken.isEmpty {
+            let msg = "Production MetaAppID/ClientToken missing. Install Dev Mode IPA or fix portal credentials."
             if reportAsError { showMessage(msg) } else { wearablesStatus = msg }
         }
         return true

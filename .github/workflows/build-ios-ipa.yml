@@ -7,6 +7,11 @@ on:
         description: 'Apple Team ID (10 chars) — embeds MWDAT.TeamID for Meta AI connection'
         required: false
         type: string
+      production_meta:
+        description: 'Use production MetaAppID/ClientToken from portal (requires wearables.developer.meta.com setup)'
+        required: false
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -45,6 +50,7 @@ jobs:
       - name: Inject MWDAT credentials into built app
         env:
           TEAM: ${{ github.event.inputs.team_id || 'JM52FT93Z2' }}
+          PRODUCTION_META: ${{ github.event.inputs.production_meta == 'true' && '1' || '0' }}
           META_APP_ID: ${{ secrets.META_APP_ID || '974304118762997' }}
           META_CLIENT_TOKEN: ${{ secrets.META_CLIENT_TOKEN || 'AR|974304118762997|80d303efb43a2a01cbbb6c730fde2f8d' }}
         run: |
@@ -52,14 +58,23 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :MWDAT dict" "$PLIST" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Add :MWDAT:AppLinkURLScheme string 'viewcaster://'" "$PLIST" 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Set :MWDAT:AppLinkURLScheme 'viewcaster://'" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :MWDAT:MetaAppID string '$META_APP_ID'" "$PLIST" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Set :MWDAT:MetaAppID '$META_APP_ID'" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :MWDAT:ClientToken string '$META_CLIENT_TOKEN'" "$PLIST" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Set :MWDAT:ClientToken '$META_CLIENT_TOKEN'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :MWDAT:TeamID string '$TEAM'" "$PLIST" 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Set :MWDAT:TeamID '$TEAM'" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :MWDAT:DAMEnabled bool true" "$PLIST" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Set :MWDAT:DAMEnabled true" "$PLIST"
+          if [ "$PRODUCTION_META" = "1" ]; then
+            echo "Injecting production Meta credentials (portal attestation required)"
+            /usr/libexec/PlistBuddy -c "Add :MWDAT:MetaAppID string '$META_APP_ID'" "$PLIST" 2>/dev/null || \
+              /usr/libexec/PlistBuddy -c "Set :MWDAT:MetaAppID '$META_APP_ID'" "$PLIST"
+            /usr/libexec/PlistBuddy -c "Add :MWDAT:ClientToken string '$META_CLIENT_TOKEN'" "$PLIST" 2>/dev/null || \
+              /usr/libexec/PlistBuddy -c "Set :MWDAT:ClientToken '$META_CLIENT_TOKEN'" "$PLIST"
+            /usr/libexec/PlistBuddy -c "Add :MWDAT:DAMEnabled bool true" "$PLIST" 2>/dev/null || \
+              /usr/libexec/PlistBuddy -c "Set :MWDAT:DAMEnabled true" "$PLIST"
+          else
+            echo "Injecting Developer Mode credentials (MetaAppID=0, no ClientToken)"
+            /usr/libexec/PlistBuddy -c "Set :MWDAT:MetaAppID '0'" "$PLIST" 2>/dev/null || \
+              /usr/libexec/PlistBuddy -c "Add :MWDAT:MetaAppID string '0'" "$PLIST"
+            /usr/libexec/PlistBuddy -c "Delete :MWDAT:ClientToken" "$PLIST" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Delete :MWDAT:DAMEnabled" "$PLIST" 2>/dev/null || true
+          fi
           /usr/libexec/PlistBuddy -c "Add :MWDAT:Analytics dict" "$PLIST" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Add :MWDAT:Analytics:OptOut bool true" "$PLIST" 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Set :MWDAT:Analytics:OptOut true" "$PLIST"
@@ -87,6 +102,6 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
         with:
           tag_name: ios-${{ github.run_number }}
-          name: ${{ format('View Caster Relay iOS {0} (Team {1})', github.run_number, github.event.inputs.team_id || 'JM52FT93Z2') }}
+          name: ${{ format('View Caster Relay iOS {0} (Team {1}{2})', github.run_number, github.event.inputs.team_id || 'JM52FT93Z2', github.event.inputs.production_meta == 'true' && '' || ', Dev Mode') }}
           files: ios/build/ViewCasterRelay-unsigned.ipa
           generate_release_notes: true
