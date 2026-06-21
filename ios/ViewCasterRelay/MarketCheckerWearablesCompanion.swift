@@ -46,7 +46,7 @@ final class MarketCheckerWearablesCompanion: ObservableObject {
     private var hasLiveFrame = false
     private var streamStateText = "stopped"
     private var registrationMonitorTask: Task<Void, Never>?
-    private var urlHandledObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var urlHandledObserver: NSObjectProtocol?
     private var registrationOpenedAt: Date?
     private var registrationCompletedAt: Date?
     private var pendingCameraPermissionRetry = false
@@ -59,8 +59,8 @@ final class MarketCheckerWearablesCompanion: ObservableObject {
     private var hasActiveDATDevice = false
     private var photoCaptureContinuation: CheckedContinuation<Data, Error>?
     private var companionBackgroundTaskID: UIBackgroundTaskIdentifier = .invalid
-    private var appBackgroundObserver: NSObjectProtocol?
-    private var appForegroundObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var appBackgroundObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var appForegroundObserver: NSObjectProtocol?
     private let defaultMetaAppID = "0"
     private let defaultClientToken = "DEV_MODE"
     private var bluetoothMonitor: BluetoothStateMonitor?
@@ -1061,31 +1061,14 @@ final class MarketCheckerWearablesCompanion: ObservableObject {
             return true
         }
 
-        return await withTaskGroup(of: Bool.self) { group in
-            group.addTask { @MainActor in
-                for await state in Wearables.shared.registrationStateStream() {
-                    if self.isRegistrationStateReady(state) {
-                        return true
-                    }
-                }
-                return false
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if isRegistrationStateReady(Wearables.shared.registrationState) {
+                return true
             }
-
-            group.addTask { @MainActor in
-                let deadline = Date().addingTimeInterval(timeoutSeconds)
-                while Date() < deadline {
-                    if self.isRegistrationStateReady(Wearables.shared.registrationState) {
-                        return true
-                    }
-                    try? await Task.sleep(nanoseconds: 250_000_000)
-                }
-                return self.isRegistrationStateReady(Wearables.shared.registrationState)
-            }
-
-            let first = await group.next() ?? false
-            group.cancelAll()
-            return first
+            try? await Task.sleep(nanoseconds: 250_000_000)
         }
+        return isRegistrationStateReady(Wearables.shared.registrationState)
     }
 
     func startRegistrationMonitoring() {
