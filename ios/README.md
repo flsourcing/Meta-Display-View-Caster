@@ -1,17 +1,19 @@
-# iOS — Bypass Market Checker fork
+# iOS — Meta Display View Caster
 
-This folder is a **direct fork** of [Bypass Market Checker Main](https://github.com/flsourcing/Bypass-Market-Checker-Main) — the app that already works with Meta AI registration on your phone.
+Fork of Bypass Market Checker with Meta glasses connection + live view casting to desktop.
 
 ## Build
 
-GitHub Actions builds `Bypass Market Checker.xcodeproj` and publishes an unsigned IPA on every push to `main` under `ios/`.
+GitHub Actions builds `Bypass Market Checker.xcodeproj` and publishes an unsigned IPA on push to `main` under `ios/`.
 
 ## Sideload
 
-1. Download the latest **Bypass Market Checker iOS** release IPA.
+1. Download the latest **Meta Display View Caster iOS** release IPA.
 2. In Sideloadly, leave **Custom Bundle ID** empty.
-3. Sideload — bundle ID must stay `com.flsourcing.bypassmarketchecker`.
+3. Bundle ID must stay `com.flsourcing.bypassmarketchecker` for Meta registration.
 
-## View Caster Relay code
+## Flow
 
-The previous View Caster relay attempt is archived at `_archive/ViewCasterRelay/` for when you re-add casting on top of this working base.
+1. Complete Meta setup (Register + Allow Camera)
+2. Pairing code appears on phone — enter on [desktop viewer](https://flsourcing.github.io/Meta-Display-View-Caster/) and [glasses page](https://flsourcing.github.io/Meta-Display-View-Caster/glasses.html)
+3. Tap **Live Stream** on glasses → POV casts to desktop

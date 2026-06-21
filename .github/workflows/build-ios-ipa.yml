@@ -68,6 +68,6 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
         with:
           tag_name: ios-${{ github.run_number }}
-          name: ${{ format('Bypass Market Checker iOS {0} (Team {1})', github.run_number, github.event.inputs.team_id || 'JM52FT93Z2') }}
+          name: ${{ format('Meta Display View Caster iOS {0} (Team {1})', github.run_number, github.event.inputs.team_id || 'JM52FT93Z2') }}
           files: ios/build/BypassMarketChecker-unsigned.ipa
           generate_release_notes: true

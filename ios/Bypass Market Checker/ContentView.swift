@@ -35,7 +35,10 @@ struct ContentView: View {
                         header
 
                         if viewModel.isMobileSetupComplete {
-                            HomeMenuView(viewModel: viewModel)
+                            CastHomeView(
+                                viewModel: viewModel,
+                                signaling: viewModel.ensureRelaySignaling()
+                            )
                         } else {
                             setupWizard
                         }
@@ -99,11 +102,14 @@ struct ContentView: View {
                         .allowsHitTesting(false)
                 }
             }
-            .navigationTitle("Bypass")
+            .navigationTitle("View Caster")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 viewModel.startRegistrationMonitoring()
                 await viewModel.restoreSession()
+                if viewModel.isMobileSetupComplete {
+                    viewModel.startCastRelayIfNeeded()
+                }
             }
             .onChange(of: scenePhase) { _, phase in
                 switch phase {
@@ -118,50 +124,16 @@ struct ContentView: View {
             .sheet(isPresented: $viewModel.showSettings) {
                 SettingsSheetView(viewModel: viewModel)
             }
-            .sheet(isPresented: $viewModel.showStockXOAuthSafari, onDismiss: {
-                Task { await viewModel.handleStockXOAuthDismissed() }
-            }) {
-                if let url = viewModel.stockxOAuthURL {
-                    SafariAuthView(url: url)
-                        .ignoresSafeArea()
-                }
-            }
-            .sheet(isPresented: $viewModel.showLookupHistory) {
-                LookupHistoryView(viewModel: viewModel)
-            }
-            .sheet(isPresented: $viewModel.showTextLookup) {
-                TextLookupView(viewModel: viewModel)
-            }
-            .fullScreenCover(isPresented: $viewModel.showMobileImageCamera) {
-                PhoneCameraPicker(
-                    onImage: { image in
-                        viewModel.showMobileImageCamera = false
-                        Task { await viewModel.performMobileImageLookup(image: image) }
-                    },
-                    onCancel: { viewModel.showMobileImageCamera = false }
-                )
-                .ignoresSafeArea()
-            }
-            .fullScreenCover(isPresented: $viewModel.showBarcodeCamera) {
-                PhoneCameraPicker(
-                    onImage: { image in
-                        viewModel.showBarcodeCamera = false
-                        Task { await viewModel.performBarcodeLookup(image: image) }
-                    },
-                    onCancel: { viewModel.showBarcodeCamera = false }
-                )
-                .ignoresSafeArea()
-            }
         }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Bypass Market Checker")
+            Text("Meta Display View Caster")
                 .font(.largeTitle.bold())
                 .foregroundStyle(.white)
 
-            Text("Companion bridge for Meta Display image lookup.")
+            Text("Phone relay — pair desktop & glasses, then go live from Meta Display.")
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.7))
         }
@@ -263,13 +235,18 @@ struct ContentView: View {
                 .font(.headline)
                 .foregroundStyle(.green.opacity(0.9))
 
-            Text("Please close the app to finalize mobile account setup.")
+            Text("Tap Get Started to open the pairing screen. Enter the code on desktop and glasses, then tap Live Stream on glasses.")
                 .font(.body)
                 .foregroundStyle(.white.opacity(0.85))
 
-            Text("After you reopen Bypass Market Checker, you'll be ready to use Image Lookup on your glasses.")
-                .font(.footnote)
-                .foregroundStyle(.white.opacity(0.65))
+            Button {
+                viewModel.finishMobileSetup()
+            } label: {
+                Text("Get Started")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(PrimaryButtonStyle(isEnabled: !viewModel.isBusy))
+            .disabled(viewModel.isBusy)
         }
     }
 
@@ -366,46 +343,6 @@ struct ConfettiView: View {
     }
 }
 
-struct HomeMenuView: View {
-    @ObservedObject var viewModel: CompanionViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Divider().overlay(.white.opacity(0.18))
-
-            homeActionButton(title: "Image Lookup", icon: "camera.viewfinder") {
-                viewModel.presentMobileImageLookup()
-            }
-
-            homeActionButton(title: "Barcode Lookup", icon: "barcode.viewfinder") {
-                viewModel.presentBarcodeLookup()
-            }
-
-            homeActionButton(title: "Text Lookup", icon: "text.magnifyingglass") {
-                viewModel.showTextLookup = true
-            }
-
-            homeActionButton(title: "Lookup History", icon: "clock.arrow.circlepath") {
-                viewModel.showLookupHistory = true
-            }
-
-            if viewModel.isBusy {
-                ProgressView().tint(.cyan)
-            }
-        }
-        .cardStyle()
-    }
-
-    private func homeActionButton(title: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: icon)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .buttonStyle(SecondaryButtonStyle())
-        .disabled(viewModel.isBusy)
-    }
-}
-
 struct SettingsSheetView: View {
     @ObservedObject var viewModel: CompanionViewModel
     @Environment(\.dismiss) private var dismiss
@@ -448,29 +385,15 @@ struct SettingsSheetView: View {
                             status: viewModel.cameraSetupStatus
                         ) { Task { await viewModel.requestCameraPermission() } }
 
-                        Text("Glasses capture is triggered automatically from Meta Display. After login, you can switch apps and this companion keeps running in the background for capture.")
+                        Text("When glasses tap Live Stream, this app opens the POV camera and relays video to desktop.")
                             .font(.footnote)
                             .foregroundStyle(.white.opacity(0.65))
-
-                        Divider()
-                            .overlay(.white.opacity(0.18))
-                            .padding(.vertical, 4)
-
-                        apiKeysSection
-
-                        aliasIntegrationSection
-
-                        stockxIntegrationSection
                     }
                     .padding(24)
                 }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .task {
-                await viewModel.refreshApiKeys()
-                await viewModel.refreshIntegrations()
-            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
@@ -498,217 +421,6 @@ struct SettingsSheetView: View {
             Circle()
                 .fill(status == .success ? Color.green : Color.gray.opacity(0.5))
                 .frame(width: 14, height: 14)
-        }
-    }
-
-    private var apiKeysSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("API Keys")
-                .font(.title3.bold())
-                .foregroundStyle(.white)
-
-            Text("Image Lookup and Barcode Lookup use your Gemini API key. Barcode scans the photo on-device first, then falls back to Gemini when needed.")
-                .font(.footnote)
-                .foregroundStyle(.white.opacity(0.65))
-
-            HStack(spacing: 10) {
-                Label("Gemini", systemImage: "key.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                Spacer()
-                Circle()
-                    .fill(viewModel.hasGeminiApiKey ? Color.green : Color.orange)
-                    .frame(width: 10, height: 10)
-                Text(viewModel.hasGeminiApiKey ? "Configured" : "Not set")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(viewModel.hasGeminiApiKey ? .green : .orange)
-            }
-            .padding(.vertical, 4)
-
-            SecureField("Paste Gemini API key", text: $viewModel.geminiApiKeyInput)
-                .fieldStyle()
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-
-            Button {
-                Task { await viewModel.saveGeminiApiKey() }
-            } label: {
-                Label(
-                    viewModel.hasGeminiApiKey ? "Update Gemini Key" : "Save Gemini Key",
-                    systemImage: "plus.circle.fill"
-                )
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(PrimaryButtonStyle(isEnabled: !viewModel.geminiApiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !viewModel.isBusy))
-            .disabled(viewModel.geminiApiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isBusy)
-
-            if viewModel.hasGeminiApiKey {
-                Button {
-                    Task { await viewModel.deleteGeminiApiKey() }
-                } label: {
-                    Label("Remove Gemini Key", systemImage: "trash")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                .disabled(viewModel.isBusy)
-            }
-        }
-    }
-
-    private var aliasIntegrationSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Alias Market")
-                .font(.title3.bold())
-                .foregroundStyle(.white)
-
-            Text("Used to load GOAT/Alias lowest ask and highest bid after each SKU or UPC lookup.")
-                .font(.footnote)
-                .foregroundStyle(.white.opacity(0.65))
-
-            HStack(spacing: 10) {
-                Label("Alias", systemImage: "cart.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                Spacer()
-                Circle()
-                    .fill(viewModel.hasAliasIntegration ? Color.green : Color.orange)
-                    .frame(width: 10, height: 10)
-                Text(viewModel.hasAliasIntegration ? "Configured" : "Not set")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(viewModel.hasAliasIntegration ? .green : .orange)
-            }
-
-            if let email = viewModel.aliasIntegrationEmail {
-                Text("Saved as \(email)")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.65))
-            }
-
-            TextField("Alias email", text: $viewModel.aliasEmailInput)
-                .fieldStyle()
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.emailAddress)
-
-            SecureField("Alias password", text: $viewModel.aliasPasswordInput)
-                .fieldStyle()
-
-            SecureField("Alias API key", text: $viewModel.aliasApiKeyInput)
-                .fieldStyle()
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-
-            Button {
-                Task { await viewModel.saveAliasIntegration() }
-            } label: {
-                Label(
-                    viewModel.hasAliasIntegration ? "Update Alias" : "Save Alias",
-                    systemImage: "plus.circle.fill"
-                )
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(PrimaryButtonStyle(isEnabled: viewModel.canSaveAliasIntegration && !viewModel.isBusy))
-            .disabled(!viewModel.canSaveAliasIntegration || viewModel.isBusy)
-
-            if viewModel.hasAliasIntegration {
-                Button {
-                    Task { await viewModel.deleteAliasIntegration() }
-                } label: {
-                    Label("Remove Alias", systemImage: "trash")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                .disabled(viewModel.isBusy)
-            }
-        }
-    }
-
-    private var stockxIntegrationSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("StockX Market")
-                .font(.title3.bold())
-                .foregroundStyle(.white)
-
-            Text("Save your StockX developer credentials, then log in once with OAuth. The x-api-key is from the StockX Developer Portal, not your account password.")
-                .font(.footnote)
-                .foregroundStyle(.white.opacity(0.65))
-
-            HStack(spacing: 10) {
-                Label("StockX", systemImage: "chart.line.uptrend.xyaxis")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                Spacer()
-                Circle()
-                    .fill(viewModel.stockxOAuthConnected ? Color.green : (viewModel.hasStockXIntegration ? Color.orange : Color.gray))
-                    .frame(width: 10, height: 10)
-                Text(viewModel.stockxOAuthConnected ? "Connected" : (viewModel.hasStockXIntegration ? "Login required" : "Not set"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(viewModel.stockxOAuthConnected ? .green : .orange)
-            }
-
-            if let email = viewModel.stockxIntegrationEmail {
-                Text("Saved as \(email)")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.65))
-            }
-
-            TextField("StockX email", text: $viewModel.stockxEmailInput)
-                .fieldStyle()
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.emailAddress)
-
-            SecureField("StockX x-api-key", text: $viewModel.stockxApiKeyInput)
-                .fieldStyle()
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-
-            TextField("Client ID", text: $viewModel.stockxClientIdInput)
-                .fieldStyle()
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-
-            SecureField("Client secret", text: $viewModel.stockxClientSecretInput)
-                .fieldStyle()
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-
-            Button {
-                Task { await viewModel.saveStockXIntegration() }
-            } label: {
-                Label(
-                    viewModel.hasStockXIntegration ? "Update StockX" : "Save StockX",
-                    systemImage: "plus.circle.fill"
-                )
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(PrimaryButtonStyle(isEnabled: viewModel.canSaveStockXIntegration && !viewModel.isBusy))
-            .disabled(!viewModel.canSaveStockXIntegration || viewModel.isBusy)
-
-            if viewModel.hasStockXIntegration {
-                Button {
-                    Task { await viewModel.loginStockX() }
-                } label: {
-                    Label("Login to StockX", systemImage: "person.badge.key.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(PrimaryButtonStyle(isEnabled: !viewModel.isBusy))
-                .disabled(viewModel.isBusy)
-
-                Text("OAuth callback: \(viewModel.stockxRedirectUri)")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.55))
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Button {
-                    Task { await viewModel.deleteStockXIntegration() }
-                } label: {
-                    Label("Remove StockX", systemImage: "trash")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                .disabled(viewModel.isBusy)
-            }
         }
     }
 }
@@ -2229,6 +1941,13 @@ final class CompanionViewModel: ObservableObject {
     private let defaultMetaAppID = "0"
     private let defaultClientToken = "DEV_MODE"
     private var bluetoothMonitor: BluetoothStateMonitor?
+    private var relaySignaling: SignalingClient!
+    private let castWebRTC = WebRTCManager()
+    private var castTask: Task<Void, Never>?
+    private var isLiveCastActive = false
+    private var castRelayConfigured = false
+
+    static let defaultSignalingServer = "wss://meta-display-view-caster.onrender.com"
 
     var isLoggedIn: Bool {
         token != nil
@@ -2328,6 +2047,7 @@ final class CompanionViewModel: ObservableObject {
 
         if isMobileSetupComplete {
             refreshSetupProgress()
+            startCastRelayIfNeeded()
             return
         }
 
@@ -2403,6 +2123,9 @@ final class CompanionViewModel: ObservableObject {
         await validateCameraPermissionFlag()
         _ = await resolveCameraPermissionIfAlreadyGranted(shouldShowMessage: false)
         refreshSetupProgress()
+        if isMobileSetupComplete {
+            startCastRelayIfNeeded()
+        }
 
         guard let savedToken = UserDefaults.standard.string(forKey: tokenKey) else {
             return
@@ -2419,9 +2142,12 @@ final class CompanionViewModel: ObservableObject {
     }
 
     func startCompanionBackgroundBridgeIfNeeded() {
-        guard isLoggedIn, isMobileSetupComplete, token != nil else { return }
         installCompanionLifecycleObserversIfNeeded()
         startActiveDeviceMonitoring()
+        if isMobileSetupComplete {
+            startCastRelayIfNeeded()
+        }
+        guard isLoggedIn, isMobileSetupComplete, token != nil else { return }
         startLookupPollingIfNeeded()
     }
 
@@ -2450,10 +2176,12 @@ final class CompanionViewModel: ObservableObject {
     }
 
     func onAppEnteredBackground() {
+        if isMobileSetupComplete {
+            beginCompanionBackgroundTask()
+            updateReadyWearablesStatus()
+        }
         guard isLoggedIn, isMobileSetupComplete, token != nil else { return }
-        beginCompanionBackgroundTask()
         startLookupPollingIfNeeded()
-        updateReadyWearablesStatus()
     }
 
     func onAppWillEnterForeground() {
@@ -2704,6 +2432,10 @@ final class CompanionViewModel: ObservableObject {
 
     func onAppBecameActive() {
         Task {
+            if isMobileSetupComplete {
+                startCastRelayIfNeeded()
+            }
+
             if pendingStockXOAuthRefresh {
                 pendingStockXOAuthRefresh = false
                 await refreshIntegrations()
@@ -4768,6 +4500,9 @@ final class CompanionViewModel: ObservableObject {
                 let quality: CGFloat = photoCaptureOnly ? 0.92 : 0.85
                 self.latestFrameJPEGData = image.jpegData(compressionQuality: quality)
                 self.hasLiveFrame = true
+                if self.isLiveCastActive {
+                    self.castWebRTC.pushGlassesFrame(frame)
+                }
                 if !quiet, !photoCaptureOnly {
                     self.previewImage = image
                 }
@@ -4920,6 +4655,123 @@ final class CompanionViewModel: ObservableObject {
         }
         isError = true
         message = value
+    }
+
+    func ensureRelaySignaling() -> SignalingClient {
+        configureCastRelay()
+        return relaySignaling
+    }
+
+    func finishMobileSetup() {
+        UserDefaults.standard.set(true, forKey: mobileSetupCompleteKey)
+        UserDefaults.standard.set(false, forKey: mobileSetupPendingRestartKey)
+        isError = false
+        message = nil
+        startCastRelayIfNeeded()
+        refreshSetupProgress()
+    }
+
+    func configureCastRelay() {
+        guard !castRelayConfigured else { return }
+        castRelayConfigured = true
+
+        let saved = UserDefaults.standard.string(forKey: "signalingServerURL") ?? Self.defaultSignalingServer
+        let url = URL(string: saved.trimmingCharacters(in: .whitespaces))
+            ?? URL(string: Self.defaultSignalingServer)!
+        relaySignaling = SignalingClient(serverURL: url)
+        castWebRTC.attach(signaling: relaySignaling)
+
+        relaySignaling.onStartStream = { [weak self] in
+            Task { @MainActor in
+                await self?.beginLiveCastFromSignaling()
+            }
+        }
+        relaySignaling.onStopStream = { [weak self] in
+            Task { @MainActor in
+                self?.endLiveCast()
+            }
+        }
+        relaySignaling.onAnswer = { [weak self] sdp in
+            self?.castWebRTC.handleAnswer(sdp)
+        }
+        relaySignaling.onIceCandidate = { [weak self] candidate, idx, mid in
+            self?.castWebRTC.handleRemoteIce(candidate: candidate, sdpMLineIndex: idx, sdpMid: mid)
+        }
+    }
+
+    func startCastRelayIfNeeded() {
+        guard isMobileSetupComplete else { return }
+        configureCastRelay()
+        castWebRTC.prepareFactory()
+        if !relaySignaling.connected {
+            relaySignaling.connect()
+        }
+    }
+
+    func restartCastRelay() {
+        endLiveCast()
+        relaySignaling?.disconnectAndClearSession()
+        startCastRelayIfNeeded()
+    }
+
+    func copyPairingCode() {
+        UIPasteboard.general.string = relaySignaling?.code ?? "------"
+        showMessage("Copied pairing code.")
+    }
+
+    func beginLiveCastFromSignaling() async {
+        if castTask != nil { return }
+
+        castTask = Task { @MainActor in
+            defer { castTask = nil }
+
+            isLiveCastActive = true
+            configureCastRelay()
+            castWebRTC.prepareFactory()
+            castWebRTC.attach(signaling: relaySignaling)
+            relaySignaling.status = "Starting live stream…"
+            castWebRTC.startStream()
+
+            guard await ensureBluetoothPoweredOn(actionName: "Live Stream") else {
+                endLiveCast()
+                return
+            }
+            guard await ensureRegistered(actionName: "Live Stream") else {
+                endLiveCast()
+                return
+            }
+
+            do {
+                try await startGlassesStreamAttempt(quiet: true, photoCaptureOnly: false, deviceTimeoutSeconds: 25)
+                relaySignaling.sendSignal(type: "stream-started", payload: ["source": "glasses"])
+                relaySignaling.status = "Live casting from glasses"
+                wearablesStatus = "Live cast active — POV streaming to desktop"
+
+                while !Task.isCancelled && isLiveCastActive && cameraStream != nil {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                }
+            } catch {
+                if !Task.isCancelled {
+                    relaySignaling.sendSignal(type: "stream-error", payload: ["message": error.localizedDescription])
+                    relaySignaling.status = error.localizedDescription
+                    showError("Live stream failed: \(error.localizedDescription)")
+                }
+                endLiveCast()
+            }
+        }
+
+        await castTask?.value
+    }
+
+    func endLiveCast() {
+        isLiveCastActive = false
+        castTask?.cancel()
+        castTask = nil
+        stopGlassesStream()
+        castWebRTC.stopStream()
+        relaySignaling?.status = relaySignaling?.connected == true
+            ? "Enter this code on desktop & glasses"
+            : "Offline"
     }
 }
 
