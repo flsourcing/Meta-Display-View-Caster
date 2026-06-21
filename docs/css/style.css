@@ -711,11 +711,61 @@ body.glasses .glasses-stream-btn:focus {
   align-items: stretch;
 }
 
-.chat-tool-btn {
-  width: auto;
-  margin-top: 0;
-  padding: 0 0.85rem;
+.chat-tools-wrap {
+  position: relative;
   flex-shrink: 0;
+}
+
+.chat-tools-menu-btn {
+  width: 2.75rem;
+  min-width: 2.75rem;
+  margin-top: 0;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.chat-menu-icon {
+  display: block;
+  width: 1.05rem;
+  height: 2px;
+  background: currentColor;
+  border-radius: 1px;
+  box-shadow: 0 -6px 0 currentColor, 0 6px 0 currentColor;
+}
+
+.chat-tools-menu {
+  position: absolute;
+  bottom: calc(100% + 0.4rem);
+  left: 0;
+  min-width: 9.5rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface, var(--card-bg, #121a24));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.chat-tools-item {
+  width: 100%;
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-tools-item:hover,
+.chat-tools-item:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .gif-panel {

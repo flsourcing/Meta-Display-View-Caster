@@ -58,6 +58,8 @@
     gifPresets: document.getElementById('gif-presets'),
     gifUrlInput: document.getElementById('gif-url-input'),
     gifUrlSend: document.getElementById('gif-url-send'),
+    chatToolsBtn: document.getElementById('chat-tools-btn'),
+    chatToolsMenu: document.getElementById('chat-tools-menu'),
     emojiBtn: document.getElementById('emoji-btn'),
     emojiPanel: document.getElementById('emoji-panel'),
     emojiGrid: document.getElementById('emoji-grid'),
@@ -333,9 +335,26 @@
     }
   }
 
+  function hideChatToolsMenu() {
+    els.chatToolsMenu?.classList.add('hidden');
+    els.chatToolsBtn?.setAttribute('aria-expanded', 'false');
+  }
+
+  function toggleChatToolsMenu() {
+    if (!els.chatToolsMenu) return;
+    const willOpen = els.chatToolsMenu.classList.contains('hidden');
+    if (willOpen) {
+      els.chatToolsMenu.classList.remove('hidden');
+      els.chatToolsBtn?.setAttribute('aria-expanded', 'true');
+    } else {
+      hideChatToolsMenu();
+    }
+  }
+
   function hideChatPickers(except = null) {
     if (except !== 'gif') els.gifPanel?.classList.add('hidden');
     if (except !== 'emoji') els.emojiPanel?.classList.add('hidden');
+    hideChatToolsMenu();
   }
 
   function requestViewerOffer() {
@@ -849,7 +868,22 @@
     if (els.remoteVideo?.srcObject) showVideoControls();
   });
 
-  els.gifBtn?.addEventListener('click', () => {
+  els.chatToolsBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleChatToolsMenu();
+  });
+
+  document.addEventListener('click', () => {
+    hideChatToolsMenu();
+  });
+
+  els.chatToolsMenu?.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+
+  els.gifBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    hideChatToolsMenu();
     const opening = els.gifPanel?.classList.contains('hidden');
     hideChatPickers(opening ? 'gif' : null);
     if (opening) {
@@ -858,7 +892,9 @@
     }
   });
 
-  els.emojiBtn?.addEventListener('click', () => {
+  els.emojiBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    hideChatToolsMenu();
     const opening = els.emojiPanel?.classList.contains('hidden');
     hideChatPickers(opening ? 'emoji' : null);
     if (opening) {
@@ -866,7 +902,9 @@
     }
   });
 
-  els.photoBtn?.addEventListener('click', () => {
+  els.photoBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    hideChatToolsMenu();
     hideChatPickers();
     els.photoInput?.click();
   });

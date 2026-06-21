@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Meta Display View Caster</title>
-  <link rel="stylesheet" href="css/style.css?v=50">
+  <link rel="stylesheet" href="css/style.css?v=51">
 </head>
 <body>
   <div class="container">
@@ -85,9 +85,16 @@
             <div id="emoji-grid" class="emoji-grid"></div>
           </div>
           <form id="chat-form" class="chat-form">
-            <button id="gif-btn" class="btn btn-secondary chat-tool-btn" type="button" title="Send GIF">GIF</button>
-            <button id="emoji-btn" class="btn btn-secondary chat-tool-btn" type="button" title="Send emoji">😀</button>
-            <button id="photo-btn" class="btn btn-secondary chat-tool-btn" type="button" title="Send photo">📷</button>
+            <div class="chat-tools-wrap">
+              <button id="chat-tools-btn" class="btn btn-secondary chat-tools-menu-btn" type="button" title="GIF, emoji, and photo" aria-expanded="false" aria-haspopup="true" aria-controls="chat-tools-menu">
+                <span class="chat-menu-icon" aria-hidden="true"></span>
+              </button>
+              <div id="chat-tools-menu" class="chat-tools-menu hidden" role="menu" aria-label="Chat attachments">
+                <button id="gif-btn" class="chat-tools-item" type="button" role="menuitem">GIF</button>
+                <button id="emoji-btn" class="chat-tools-item" type="button" role="menuitem">😀 Emoji</button>
+                <button id="photo-btn" class="chat-tools-item" type="button" role="menuitem">📷 Photo</button>
+              </div>
+            </div>
             <input id="photo-input" class="visually-hidden-file" type="file" accept="image/*">
             <input id="chat-input" class="viewer-input chat-input" type="text" maxlength="500" placeholder="Say something…" autocomplete="off">
             <button id="chat-send" class="btn btn-primary chat-send" type="submit">Send</button>
@@ -97,11 +104,11 @@
     </section>
   </div>
 
-  <script src="js/ws-signaling.js?v=50"></script>
-  <script src="js/webrtc-viewer.js?v=50"></script>
-  <script src="js/peerjs.min.js?v=50"></script>
-  <script src="config.js?v=50"></script>
-  <script src="js/signaling.js?v=50"></script>
-  <script src="js/desktop.js?v=50"></script>
+  <script src="js/ws-signaling.js?v=51"></script>
+  <script src="js/webrtc-viewer.js?v=51"></script>
+  <script src="js/peerjs.min.js?v=51"></script>
+  <script src="config.js?v=51"></script>
+  <script src="js/signaling.js?v=51"></script>
+  <script src="js/desktop.js?v=51"></script>
 </body>
 </html>
