@@ -10,7 +10,8 @@ final class RelayViewModel: ObservableObject {
     @Published var serverURLString: String
     @Published private(set) var signaling: SignalingClient
     @Published var metaHint = ""
-    @Published private(set) var wearables = WearablesManager()
+    @Published private(set) var meta = BypassMetaCompanion()
+    @Published private(set) var wearables: WearablesManager
     @Published var sideloadTeamId = SigningInfo.displayTeamID ?? ""
     @Published var metaBlocked = SigningInfo.needsTeamIDPatch
 
@@ -25,8 +26,11 @@ final class RelayViewModel: ObservableObject {
         let url = URL(string: saved.trimmingCharacters(in: .whitespaces))
             ?? URL(string: Self.defaultServer)!
         signaling = SignalingClient(serverURL: url)
+        let capture = WearablesManager()
+        wearables = capture
         wireCallbacks()
-        wearables.objectWillChange
+        capture.meta = meta
+        meta.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &subs)
     }
@@ -66,7 +70,9 @@ final class RelayViewModel: ObservableObject {
 
     func configureWearables(configError: String? = nil) {
         webrtc.prepareFactory()
-        wearables.configure(configError: configError)
+        if let configError {
+            meta.wearablesStatus = "SDK configure: \(configError)"
+        }
     }
 
     func applyServerURL() {
@@ -102,20 +108,6 @@ final class RelayViewModel: ObservableObject {
         signaling.connect()
     }
 
-    func connectMetaAI() {
-        refreshMetaInstallState()
-        if metaBlocked {
-            metaHint = SigningInfo.patchInstructions
-            return
-        }
-        if let issue = SigningInfo.metaConnectionIssue {
-            metaHint = issue
-            return
-        }
-        metaHint = ""
-        wearables.connectMetaAI()
-    }
-
     func copyTeamIdForPatch() {
         let team = SigningInfo.displayTeamID ?? sideloadTeamId
         guard !team.isEmpty else {
@@ -131,28 +123,10 @@ final class RelayViewModel: ObservableObject {
         metaBlocked = SigningInfo.needsTeamIDPatch
     }
 
-    func allowGlassesCamera() {
-        metaHint = ""
-        Task {
-            await wearables.requestGlassesCamera()
-        }
-    }
-
-    func finishMetaConnection() {
-        metaHint = ""
-        wearables.openMetaAIApp()
-    }
-
-    func handleMetaCallback(_ url: URL) async {
-        await MetaWearablesURL.handle(url)
-    }
-
     func onReturnFromBackground() {
         endBackgroundTask()
         refreshMetaInstallState()
-        Task {
-            await wearables.onAppBecameActive()
-        }
+        meta.onAppWillEnterForeground()
         if !signaling.connected {
             start()
         }
@@ -297,69 +271,8 @@ struct ContentView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
 
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Meta Glasses Camera")
-                            .font(.headline)
-
-                        if !model.wearables.wearablesStatus.isEmpty {
-                            Text(model.wearables.wearablesStatus)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.leading)
-                        }
-
-                        Button {
-                            model.wearables.openMetaAIApp()
-                        } label: {
-                            Label("Open Meta AI", systemImage: "app.connected.to.app.below.fill")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-
-                        MetaSetupStepView(
-                            title: "Register with Meta AI",
-                            statusLabel: model.wearables.registrationSetupStatus == .success ? "Successful" : "Waiting for connection...",
-                            isSuccess: model.wearables.registrationSetupStatus == .success,
-                            buttonTitle: "Register With Meta AI",
-                            buttonIcon: "link",
-                            hint: "1) Connect in Meta AI. 2) Tap Complete in Meta AI below. 3) Tap View Caster Relay in Meta AI.",
-                            disabled: model.wearables.registrationSetupStatus == .success || model.metaBlocked
-                        ) {
-                            model.connectMetaAI()
-                        }
-
-                        if model.wearables.needsCompleteRegistration {
-                            Button {
-                                model.wearables.completeRegistrationInMetaAI()
-                            } label: {
-                                Label("Complete in Meta AI", systemImage: "arrow.uturn.backward.circle.fill")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.orange)
-                        }
-
-                        MetaSetupStepView(
-                            title: "Allow Camera",
-                            statusLabel: model.wearables.cameraSetupStatus == .success ? "Successful" : "Waiting for approval...",
-                            isSuccess: model.wearables.cameraSetupStatus == .success,
-                            buttonTitle: "Allow Camera",
-                            buttonIcon: "camera.badge.ellipsis",
-                            hint: "Approve camera access in Meta AI, then return here.",
-                            disabled: model.metaBlocked || model.wearables.cameraSetupStatus == .success
-                        ) {
-                            model.allowGlassesCamera()
-                        }
-
-                        Button("Run Meta diagnostics") {
-                            Task { await model.wearables.runWearablesDiagnostics() }
-                        }
-                        .font(.footnote)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-                    .background(Color(.secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    MetaSettingsView(meta: model.meta)
+                        .disabled(model.metaBlocked)
 
                     if !model.metaHint.isEmpty {
                         Text(model.metaHint)
@@ -400,8 +313,10 @@ struct ContentView: View {
             .onAppear {
                 model.refreshMetaInstallState()
                 model.configureWearables(configError: configureError)
-                model.wearables.startRegistrationMonitoring()
                 model.start()
+            }
+            .task {
+                await model.meta.bootstrap()
             }
             .onChange(of: scenePhase) { _, phase in
                 switch phase {
@@ -413,44 +328,6 @@ struct ContentView: View {
                     break
                 }
             }
-        }
-    }
-}
-
-private struct MetaSetupStepView: View {
-    let title: String
-    let statusLabel: String
-    let isSuccess: Bool
-    let buttonTitle: String
-    let buttonIcon: String
-    let hint: String
-    let disabled: Bool
-    let action: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(isSuccess ? Color.green : Color.orange)
-                    .frame(width: 10, height: 10)
-                Text(statusLabel)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(isSuccess ? .green : .orange)
-            }
-
-            Button(action: action) {
-                Label(buttonTitle, systemImage: buttonIcon)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .disabled(disabled)
-
-            Text(hint)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
         }
     }
 }

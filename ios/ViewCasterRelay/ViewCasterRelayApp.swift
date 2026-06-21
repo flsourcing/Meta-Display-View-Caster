@@ -1,36 +1,33 @@
-import SwiftUI
 import MWDATCore
+import SwiftUI
 
 @main
 struct ViewCasterRelayApp: App {
-    @UIApplicationDelegateAdaptor(MetaAppDelegate.self) private var appDelegate
-    @StateObject private var model: RelayViewModel
-    private let configureError: String?
+    @StateObject private var model = RelayViewModel()
 
     init() {
-        var configErr: String?
         do {
             try Wearables.configure()
         } catch {
-            configErr = error.localizedDescription
-            NSLog("ViewCaster: Wearables.configure failed: \(error.localizedDescription)")
-        }
-        configureError = configErr
-
-        let vm = RelayViewModel()
-        _model = StateObject(wrappedValue: vm)
-
-        MetaAppDelegate.install { url in
-            Task { await MetaWearablesURL.handle(url) }
+            assertionFailure("Failed to configure Meta Wearables SDK: \(error)")
         }
     }
 
     var body: some Scene {
         WindowGroup {
-            ContentView(configureError: configureError)
+            ContentView()
                 .environmentObject(model)
                 .onOpenURL { url in
-                    Task { await MetaWearablesURL.handle(url) }
+                    Task {
+                        do {
+                            let handled = try await Wearables.shared.handleUrl(url)
+                            if handled {
+                                NotificationCenter.default.post(name: .wearablesURLHandled, object: url)
+                            }
+                        } catch {
+                            NSLog("Wearables handleUrl failed: \(error.localizedDescription)")
+                        }
+                    }
                 }
         }
     }
