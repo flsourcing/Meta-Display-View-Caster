@@ -3,7 +3,6 @@ import SwiftUI
 
 @main
 struct ViewCasterRelayApp: App {
-    @UIApplicationDelegateAdaptor(MetaAppDelegate.self) private var appDelegate
     @StateObject private var model = RelayViewModel()
 
     init() {
@@ -18,13 +17,17 @@ struct ViewCasterRelayApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(model)
-                .onAppear {
-                    MetaAppDelegate.install { url in
-                        model.handleMetaCallback(url)
-                    }
-                }
                 .onOpenURL { url in
-                    model.handleMetaCallback(url)
+                    Task {
+                        do {
+                            let handled = try await Wearables.shared.handleUrl(url)
+                            if handled {
+                                NotificationCenter.default.post(name: .wearablesURLHandled, object: url)
+                            }
+                        } catch {
+                            NSLog("Wearables handleUrl failed: \(error.localizedDescription)")
+                        }
+                    }
                 }
         }
     }

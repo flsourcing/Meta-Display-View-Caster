@@ -8,10 +8,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.mdvc.viewcasterrelay</string>
+			<string>com.flsourcing.bypassmarketchecker</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>viewcaster</string>
+				<string>bypassmarketchecker</string>
 			</array>
 		</dict>
 	</array>
@@ -22,11 +22,11 @@
 	<key>MWDAT</key>
 	<dict>
 		<key>AppLinkURLScheme</key>
-		<string>viewcaster://</string>
+		<string>bypassmarketchecker://</string>
 		<key>MetaAppID</key>
-		<string>974304118762997</string>
+		<string>2081815602734953</string>
 		<key>ClientToken</key>
-		<string>AR|974304118762997|80d303efb43a2a01cbbb6c730fde2f8d</string>
+		<string>AR|2081815602734953|981f31c0e7645c087d009a23962d1992</string>
 		<key>TeamID</key>
 		<string>JM52FT93Z2</string>
 		<key>DAMEnabled</key>
@@ -47,15 +47,9 @@
 		<string>bluetooth-peripheral</string>
 		<string>external-accessory</string>
 	</array>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Find and connect to Meta glasses on your local network.</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_bonjour._tcp</string>
-	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Connect to Meta Display glasses for live view streaming.</string>
+	<string>Needed to connect to Meta Wearables.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Fallback phone camera if glasses stream is unavailable.</string>
+	<string>Needed to stream and capture POV frames from supported Meta glasses.</string>
 </dict>
 </plist>

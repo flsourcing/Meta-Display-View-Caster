@@ -1,6 +1,6 @@
 name: ViewCasterRelay
 options:
-  bundleIdPrefix: com.mdvc
+  bundleIdPrefix: com.flsourcing
   projectFormat: xcode16_0
   deploymentTarget:
     iOS: "17.0"
@@ -22,22 +22,24 @@ targets:
     platform: iOS
     sources:
       - path: ViewCasterRelay
+        excludes:
+          - BypassMetaSource.swift
     info:
       path: ViewCasterRelay/Info.plist
       properties:
         CFBundleDisplayName: View Caster Relay
         UILaunchScreen: {}
         MWDAT:
-          AppLinkURLScheme: viewcaster://
-          MetaAppID: "974304118762997"
-          ClientToken: "AR|974304118762997|80d303efb43a2a01cbbb6c730fde2f8d"
+          AppLinkURLScheme: bypassmarketchecker://
+          MetaAppID: "2081815602734953"
+          ClientToken: "AR|2081815602734953|981f31c0e7645c087d009a23962d1992"
           TeamID: JM52FT93Z2
           DAMEnabled: true
           Analytics:
             OptOut: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.mdvc.viewcasterrelay
+        PRODUCT_BUNDLE_IDENTIFIER: com.flsourcing.bypassmarketchecker
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
         DEVELOPMENT_TEAM: ""

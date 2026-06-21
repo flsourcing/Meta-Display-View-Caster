@@ -1,70 +1,54 @@
 import SwiftUI
 
-/// Meta Glasses Camera block from Bypass Market Checker SettingsSheetView.
+/// Meta Glasses Camera — copied from Bypass Market Checker SettingsSheetView.
 struct MetaSettingsView: View {
-    @ObservedObject var meta: BypassMetaCompanion
+    @ObservedObject var wearables: MarketCheckerWearablesCompanion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Meta Glasses Camera")
                 .font(.headline)
 
-            Text(meta.wearablesStatus)
+            Text(wearables.wearablesStatus)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.leading)
 
-            Text(meta.registrationStateLabel)
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-
-            if let message = meta.message {
+            if let message = wearables.message {
                 Text(message)
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(meta.isError ? .red : .secondary)
+                    .foregroundStyle(wearables.isError ? .red : .secondary)
             }
 
-            Button { meta.openMetaAIApp() } label: {
+            Button { wearables.openMetaAIApp() } label: {
                 Label("Open Meta AI", systemImage: "app.connected.to.app.below.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
-            .disabled(meta.isBusy)
+            .disabled(wearables.isBusy)
 
             metaSettingsRow(
                 title: "Register With Meta AI",
                 icon: "link",
-                status: meta.registrationSetupStatus
+                status: wearables.registrationSetupStatus
             ) {
-                meta.startRegistration()
-            }
-
-            if meta.needsCompleteRegistration {
-                Button {
-                    meta.completeRegistrationInMetaAI()
-                } label: {
-                    Label("Finish in Meta AI", systemImage: "arrow.uturn.backward.circle.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.orange)
-                .disabled(meta.isBusy)
+                wearables.startRegistration()
             }
 
             metaSettingsRow(
                 title: "Allow Camera",
                 icon: "camera.badge.ellipsis",
-                status: meta.cameraSetupStatus
+                status: wearables.cameraSetupStatus
             ) {
-                Task { await meta.requestCameraPermission() }
+                Task { await wearables.requestCameraPermission() }
             }
 
             Button("Run Meta diagnostics") {
-                Task { await meta.runWearablesDiagnostics() }
+                Task { await wearables.runWearablesDiagnostics() }
             }
             .font(.footnote)
 
-            Text("After Connect in Meta AI, return here and tap Finish in Meta AI (sideload needs the viewcaster:// callback).")
+            Text("Same Meta setup as Bypass Market Checker. Register, allow camera, then return here.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -87,7 +71,7 @@ struct MetaSettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.bordered)
-            .disabled(meta.isBusy)
+            .disabled(wearables.isBusy)
 
             Circle()
                 .fill(status == .success ? Color.green : Color.gray.opacity(0.5))

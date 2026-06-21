@@ -10,8 +10,7 @@ final class RelayViewModel: ObservableObject {
     @Published var serverURLString: String
     @Published private(set) var signaling: SignalingClient
     @Published var metaHint = ""
-    @Published private(set) var meta = BypassMetaCompanion()
-    @Published private(set) var wearables: WearablesManager
+    @Published private(set) var wearables = MarketCheckerWearablesCompanion()
     @Published var sideloadTeamId = SigningInfo.displayTeamID ?? ""
     @Published var metaBlocked = SigningInfo.needsTeamIDPatch
 
@@ -26,11 +25,8 @@ final class RelayViewModel: ObservableObject {
         let url = URL(string: saved.trimmingCharacters(in: .whitespaces))
             ?? URL(string: Self.defaultServer)!
         signaling = SignalingClient(serverURL: url)
-        let capture = WearablesManager()
-        wearables = capture
         wireCallbacks()
-        capture.meta = meta
-        meta.objectWillChange
+        wearables.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &subs)
     }
@@ -71,7 +67,7 @@ final class RelayViewModel: ObservableObject {
     func configureWearables(configError: String? = nil) {
         webrtc.prepareFactory()
         if let configError {
-            meta.wearablesStatus = "SDK configure: \(configError)"
+            wearables.wearablesStatus = "SDK configure: \(configError)"
         }
     }
 
@@ -94,7 +90,7 @@ final class RelayViewModel: ObservableObject {
 
     private func stopCast() {
         phoneCamera.stop()
-        wearables.stopGlassesStream()
+        wearables.stopCastCapture()
         webrtc.stopStream()
     }
 
@@ -126,22 +122,9 @@ final class RelayViewModel: ObservableObject {
     func onReturnFromBackground() {
         endBackgroundTask()
         refreshMetaInstallState()
-        meta.onAppWillEnterForeground()
+        wearables.onAppWillEnterForeground()
         if !signaling.connected {
             start()
-        }
-    }
-
-    func handleMetaCallback(_ url: URL) {
-        Task {
-            do {
-                let handled = try await Wearables.shared.handleUrl(url)
-                if handled {
-                    NotificationCenter.default.post(name: .wearablesURLHandled, object: url)
-                }
-            } catch {
-                NSLog("Wearables handleUrl failed: \(error.localizedDescription)")
-            }
         }
     }
 
@@ -184,7 +167,7 @@ final class RelayViewModel: ObservableObject {
 
         if wearables.canStreamFromGlasses {
             do {
-                try await wearables.startGlassesStream { [weak self] step in
+                try await wearables.capturePhotoForCast { [weak self] step in
                     self?.signaling.status = step
                 }
                 guard !Task.isCancelled else { return }
@@ -192,7 +175,7 @@ final class RelayViewModel: ObservableObject {
                 signaling.status = "Sent glasses photo to desktop"
                 return
             } catch {
-                wearables.stopGlassesStream()
+                wearables.stopCastCapture()
                 signaling.status = "Glasses stream failed — trying phone camera…"
             }
         } else {
@@ -284,7 +267,7 @@ struct ContentView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
 
-                    MetaSettingsView(meta: model.meta)
+                    MetaSettingsView(wearables: model.wearables)
                         .disabled(model.metaBlocked)
 
                     if !model.metaHint.isEmpty {
@@ -329,7 +312,7 @@ struct ContentView: View {
                 model.start()
             }
             .task {
-                await model.meta.bootstrap()
+                await model.wearables.bootstrap()
             }
             .onChange(of: scenePhase) { _, phase in
                 switch phase {
