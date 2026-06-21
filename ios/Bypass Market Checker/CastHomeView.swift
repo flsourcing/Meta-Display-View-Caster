@@ -39,7 +39,7 @@ struct CastHomeView: View {
                 linkRow(
                     title: "Glasses",
                     linked: signaling.glassesLinked,
-                    hint: "Enter code on glasses → Live Stream"
+                    hint: "Open glasses app → Live Stream (links to phone automatically)"
                 )
             }
 
@@ -79,10 +79,10 @@ struct CastHomeView: View {
             Button {
                 viewModel.wipeLiveChat()
             } label: {
-                Label("Wipe Live Chat", systemImage: "trash")
+                Label("Wipe Live Chat", systemImage: "trash.fill")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(SecondaryButtonStyle())
+            .buttonStyle(DangerButtonStyle())
 
             liveChatControlPanel
 
@@ -120,13 +120,14 @@ struct CastHomeView: View {
             }
             .buttonStyle(SecondaryButtonStyle())
 
-            Text("1. Tap Prepare Glasses\n2. Keep View Caster open on phone\n3. Enter code on glasses\n4. Guests: open viewer URL → password Wedding → enter name\n5. Live Stream starts camera + mic → viewers see and hear it live\n6. Tap Stop Live Cast when done")
+            Text("1. Tap Prepare Glasses\n2. Keep View Caster open on phone\n3. On glasses: open View Caster → Live Stream\n4. Guests: open viewer URL → password Wedding → enter name\n5. Live Stream starts camera + mic → viewers see and hear it live\n6. Tap Stop Live Cast when done")
                 .font(.footnote)
                 .foregroundStyle(.white.opacity(0.65))
         }
         .cardStyle()
         .onAppear {
             viewModel.startCastCompanionBridge()
+            signaling.syncChatHistory()
         }
     }
 

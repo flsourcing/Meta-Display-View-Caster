@@ -7,51 +7,30 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Meta Display View Caster — Glasses</title>
-  <link rel="stylesheet" href="css/style.css?v=22">
+  <link rel="stylesheet" href="css/style.css?v=40">
 </head>
 <body class="glasses">
   <div class="container">
     <header><h1>Meta Display View Caster</h1></header>
 
-    <div id="pairing-view">
-      <p class="code-timer">Enter code from phone app</p>
-      <div id="digit-display" class="digit-display" aria-live="polite">------</div>
-
-      <div id="digit-grid" class="digit-grid" role="group" aria-label="Pairing code keypad">
-        <button type="button" class="btn btn-primary digit-btn" data-digit="1" tabindex="0">1</button>
-        <button type="button" class="btn btn-primary digit-btn" data-digit="2" tabindex="0">2</button>
-        <button type="button" class="btn btn-primary digit-btn" data-digit="3" tabindex="0">3</button>
-        <button type="button" class="btn btn-primary digit-btn" data-digit="4" tabindex="0">4</button>
-        <button type="button" class="btn btn-primary digit-btn" data-digit="5" tabindex="0">5</button>
-        <button type="button" class="btn btn-primary digit-btn" data-digit="6" tabindex="0">6</button>
-        <button type="button" class="btn btn-primary digit-btn" data-digit="7" tabindex="0">7</button>
-        <button type="button" class="btn btn-primary digit-btn" data-digit="8" tabindex="0">8</button>
-        <button type="button" class="btn btn-primary digit-btn" data-digit="9" tabindex="0">9</button>
-        <button id="backspace-btn" type="button" class="btn btn-primary digit-btn" tabindex="0">Back</button>
-        <button type="button" class="btn btn-primary digit-btn" data-digit="0" tabindex="0">0</button>
-        <button id="join-btn" type="button" class="btn btn-stream digit-btn" tabindex="0">Go</button>
-      </div>
-
-      <div id="status" class="status waiting">
-        <span class="status-dot"></span>
-        <span id="status-text">Waiting</span>
-      </div>
+    <div id="connected-view">
+      <p id="connected-label" class="connected-label">Connecting…</p>
+      <p id="stream-hint" class="code-timer stream-hint">Linking to View Caster on your phone…</p>
+      <button id="stream-btn" class="btn btn-stream glasses-stream-btn" type="button" tabindex="0">Live Stream</button>
     </div>
 
-    <div id="connected-view" class="hidden">
-      <p id="connected-label" class="connected-label">Ready</p>
-      <p id="stream-hint" class="code-timer stream-hint">Select Live Stream, press Enter</p>
-      <button id="stream-btn" class="btn btn-stream glasses-stream-btn" type="button" tabindex="0">Live Stream</button>
-      <p id="session-code" class="hidden" aria-hidden="true"></p>
+    <div id="status" class="status waiting">
+      <span class="status-dot"></span>
+      <span id="status-text">Connecting</span>
     </div>
   </div>
 
-  <footer>Meta Display View Caster · <span id="version-label">ws</span></footer>
+  <footer>Meta Display View Caster · <span id="version-label">auto</span></footer>
 
-  <script src="js/ws-signaling.js?v=25"></script>
-  <script src="js/peerjs.min.js?v=25"></script>
-  <script src="config.js?v=25"></script>
-  <script src="js/signaling.js?v=25"></script>
-  <script src="js/glasses.js?v=29"></script>
+  <script src="js/ws-signaling.js?v=40"></script>
+  <script src="js/peerjs.min.js?v=40"></script>
+  <script src="config.js?v=40"></script>
+  <script src="js/signaling.js?v=40"></script>
+  <script src="js/glasses.js?v=40"></script>
 </body>
 </html>

@@ -105,6 +105,13 @@
     return ws;
   }
 
+  async function joinGlassesAuto() {
+    const ws = await connect();
+    send(ws, { type: 'join-glasses-auto' });
+    await waitFor(ws, 'relay-ack');
+    return ws;
+  }
+
   async function verifyViewerPassword(password) {
     const ws = await connect();
     send(ws, { type: 'verify-viewer-password', password });
@@ -139,5 +146,5 @@
     }
   }
 
-  window.CasterWS = { connect, send, waitFor, pairDesktop, joinGlasses, joinViewer, verifyViewerPassword, fetchLiveStatus, wsUrl, wakeServer, httpBase };
+  window.CasterWS = { connect, send, waitFor, pairDesktop, joinGlasses, joinGlassesAuto, joinViewer, verifyViewerPassword, fetchLiveStatus, wsUrl, wakeServer, httpBase };
 })();

@@ -120,6 +120,8 @@ function findSessionByCode(code) {
 }
 
 function findViewableSession() {
+  const lobby = sessions.get(PUBLIC_LOBBY_ID);
+  if (lobby?.relayWs) return lobby;
   for (const session of sessions.values()) {
     if (session.relayWs && session.streaming) return session;
   }
@@ -153,7 +155,37 @@ function findOrCreateLobbySession() {
 }
 
 function sessionForViewerJoin() {
-  return findViewableSession() || findOrCreateLobbySession();
+  return findOrCreateLobbySession();
+}
+
+function mergeStraySessionsIntoLobby(lobby) {
+  if (!lobby.viewers) lobby.viewers = new Map();
+  if (!lobby.chatHistory) lobby.chatHistory = [];
+  for (const [sid, other] of sessions.entries()) {
+    if (sid === PUBLIC_LOBBY_ID) continue;
+    const hasViewers = !!(other.viewers?.size);
+    const hasChat = !!(other.chatHistory?.length);
+    if (!hasViewers && !hasChat) continue;
+    if (hasViewers) {
+      for (const [vid, viewer] of other.viewers.entries()) {
+        lobby.viewers.set(vid, viewer);
+        const socket = viewerSocket(viewer);
+        if (socket) {
+          socket.castSessionId = PUBLIC_LOBBY_ID;
+          socket.castRole = 'viewer';
+          socket.castViewerId = vid;
+        }
+      }
+      other.viewers.clear();
+    }
+    if (hasChat) {
+      lobby.chatHistory.push(...other.chatHistory);
+      other.chatHistory = [];
+      if (lobby.chatHistory.length > CHAT_HISTORY_LIMIT) {
+        lobby.chatHistory.splice(0, lobby.chatHistory.length - CHAT_HISTORY_LIMIT);
+      }
+    }
+  }
 }
 
 function pushChatMessage(session, payload) {
@@ -237,48 +269,17 @@ wss.on('connection', (ws) => {
     switch (msg.type) {
       case 'register-relay': {
         role = 'relay';
-        const reconnectId = typeof msg.sessionId === 'string' ? msg.sessionId : '';
-        const lobby = sessions.get(PUBLIC_LOBBY_ID);
-        const lobbyHasViewers = !!(lobby?.viewers?.size);
-        let session = null;
-
-        if (lobbyHasViewers && lobby) {
-          session = lobby;
-        } else if (reconnectId) {
-          session = getSession(reconnectId);
-        }
-
-        if (!session && lobby && !lobby.relayWs) {
-          session = lobby;
-        }
-
-        if (session) {
-          if (!session.viewers) session.viewers = new Map();
-          if (!session.chatHistory) session.chatHistory = [];
-          session.relayWs = ws;
-          session.relayDetachedAt = 0;
-          sessionId = session.sessionId;
-          if (!session.code || !codeIndex.has(session.code)) {
-            rotateCode(session);
-          } else {
-            session.codeExpiresAt = Date.now() + CODE_ROTATION_MS;
-          }
-        } else {
-          sessionId = randomUUID();
-          session = {
-            sessionId,
-            relayWs: ws,
-            glassesWs: null,
-            desktopWs: null,
-            viewers: new Map(),
-            chatHistory: [],
-            code: '',
-            codeExpiresAt: 0,
-            relayDetachedAt: 0,
-            streaming: false,
-          };
+        const session = findOrCreateLobbySession();
+        mergeStraySessionsIntoLobby(session);
+        if (!session.viewers) session.viewers = new Map();
+        if (!session.chatHistory) session.chatHistory = [];
+        session.relayWs = ws;
+        session.relayDetachedAt = 0;
+        sessionId = session.sessionId;
+        if (!session.code || !codeIndex.has(session.code)) {
           rotateCode(session);
-          sessions.set(sessionId, session);
+        } else {
+          session.codeExpiresAt = Date.now() + CODE_ROTATION_MS;
         }
 
         ws.castSessionId = sessionId;
@@ -300,6 +301,7 @@ wss.on('connection', (ws) => {
         if (session.desktopWs) {
           send(session.desktopWs, { type: 'relay-online', ...sessionPayload(session) });
         }
+        broadcastViewerList(session);
         const viewers = buildViewerList(session);
         for (const [vid, viewer] of session.viewers.entries()) {
           send(ws, {
@@ -311,6 +313,33 @@ wss.on('connection', (ws) => {
             streaming: session.streaming,
             viewers,
           });
+        }
+        break;
+      }
+
+      case 'join-glasses-auto': {
+        role = 'glasses';
+        const session = findViewableSession();
+        if (!session?.relayWs) {
+          send(ws, {
+            type: 'error',
+            message: 'Phone relay offline — open View Caster on your phone first.',
+          });
+          return;
+        }
+        session.glassesWs = ws;
+        sessionId = session.sessionId;
+        ws.castSessionId = sessionId;
+        ws.castRole = role;
+        send(ws, { type: 'relay-ack', role: 'glasses', ...sessionPayload(session) });
+        if (session.relayWs) {
+          send(session.relayWs, { type: 'glasses-joined', ...sessionPayload(session) });
+        }
+        for (const viewer of session.viewers.values()) {
+          send(viewerSocket(viewer), { type: 'glasses-joined', ...sessionPayload(session) });
+        }
+        if (session.desktopWs) {
+          send(session.desktopWs, { type: 'glasses-joined', ...sessionPayload(session) });
         }
         break;
       }
@@ -429,6 +458,19 @@ wss.on('connection', (ws) => {
         };
         pushChatMessage(session, payload);
         broadcast(session, payload);
+        if (session.relayWs) send(session.relayWs, payload);
+        break;
+      }
+
+      case 'sync-chat': {
+        const activeSessionId = ws.castSessionId || sessionId;
+        const activeRole = ws.castRole || role;
+        const session = getSession(activeSessionId);
+        if (!session || activeRole !== 'relay') break;
+        send(ws, {
+          type: 'chat-sync',
+          messages: (session.chatHistory || []).slice(-50),
+        });
         break;
       }
 
@@ -445,8 +487,10 @@ wss.on('connection', (ws) => {
       }
 
       case 'clear-chat': {
-        const session = getSession(sessionId);
-        if (!session || role !== 'relay') {
+        const activeSessionId = ws.castSessionId || sessionId;
+        const activeRole = ws.castRole || role;
+        const session = getSession(activeSessionId);
+        if (!session || activeRole !== 'relay') {
           send(ws, { type: 'error', message: 'Only the caster can clear chat.' });
           return;
         }
@@ -456,8 +500,10 @@ wss.on('connection', (ws) => {
       }
 
       case 'delete-chat-message': {
-        const session = getSession(sessionId);
-        if (!session || role !== 'relay') {
+        const activeSessionId = ws.castSessionId || sessionId;
+        const activeRole = ws.castRole || role;
+        const session = getSession(activeSessionId);
+        if (!session || activeRole !== 'relay') {
           send(ws, { type: 'error', message: 'Only the caster can delete chat messages.' });
           return;
         }

@@ -124,6 +124,10 @@ final class SignalingClient: ObservableObject {
         chatMessages.removeAll { $0.id == id }
     }
 
+    func syncChatHistory() {
+        sendSignal(type: "sync-chat")
+    }
+
     func sendOffer(_ sdp: String, viewerId: String) {
         sendSignal(type: "offer", payload: ["sdp": sdp, "target": "viewer", "viewerId": viewerId])
     }
@@ -328,6 +332,7 @@ final class SignalingClient: ObservableObject {
             if let history = json["chatHistory"] as? [[String: Any]] {
                 applyChatHistory(history)
             }
+            syncChatHistory()
             connected = true
             status = "Enter this code on desktop & glasses"
             registerTask?.cancel()
@@ -376,6 +381,10 @@ final class SignalingClient: ObservableObject {
             appendChatMessage(json)
         case "chat-cleared":
             chatMessages = []
+        case "chat-sync":
+            if let history = json["messages"] as? [[String: Any]] {
+                applyChatHistory(history)
+            }
         case "chat-message-deleted":
             if let id = json["id"] as? String {
                 chatMessages.removeAll { $0.id == id }

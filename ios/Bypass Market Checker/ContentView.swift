@@ -5832,6 +5832,17 @@ struct SecondaryButtonStyle: ButtonStyle {
     }
 }
 
+struct DangerButtonStyle: ButtonStyle {
+    func makeBody(configuration: ButtonStyle.Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .padding(.vertical, 14)
+            .foregroundStyle(Color.white)
+            .background(Color.red.opacity(0.82), in: RoundedRectangle(cornerRadius: 18))
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+    }
+}
+
 enum CompanionSpeechTranscriberError: LocalizedError {
     case unavailable
     case permissionDenied
