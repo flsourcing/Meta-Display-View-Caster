@@ -29,6 +29,8 @@ struct CastHomeView: View {
                     .foregroundStyle(.white.opacity(0.75))
             }
 
+            castPreviewPanel
+
             Text(viewModel.wearablesStatus)
                 .font(.footnote)
                 .foregroundStyle(viewModel.glassesPreparedForCast ? .green : .orange)
@@ -136,6 +138,47 @@ struct CastHomeView: View {
         .cardStyle()
         .onAppear {
             viewModel.startCastCompanionBridge()
+        }
+    }
+
+    private var castPreviewPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Live preview")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.85))
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.black.opacity(0.85))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    }
+
+                if let image = viewModel.castPreviewImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                } else if viewModel.isLiveCasting || viewModel.isStartingLiveCast {
+                    VStack(spacing: 8) {
+                        ProgressView()
+                            .tint(.cyan)
+                        Text("Waiting for glasses camera…")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.65))
+                    }
+                    .padding()
+                } else {
+                    Text("Start Live Cast to see glasses POV here")
+                        .font(.caption)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white.opacity(0.55))
+                        .padding()
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 180, maxHeight: 240)
         }
     }
 

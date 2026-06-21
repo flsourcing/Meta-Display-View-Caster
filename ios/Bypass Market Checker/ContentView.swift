@@ -1849,6 +1849,7 @@ final class CompanionViewModel: ObservableObject {
     @Published var isError = false
     @Published var wearablesStatus = "Register the app, allow camera, then start the glasses stream."
     @Published var previewImage: UIImage?
+    @Published var castPreviewImage: UIImage?
     @Published var setupStep: SetupStep = .registration
     @Published var registrationSetupStatus: SetupItemStatus = .waiting
     @Published var cameraSetupStatus: SetupItemStatus = .waiting
@@ -3812,6 +3813,7 @@ final class CompanionViewModel: ObservableObject {
         latestFrameUIImage = nil
         hasLiveFrame = false
         previewImage = nil
+        castPreviewImage = nil
         streamStateText = "stopping"
 
         if let streamToStop {
@@ -3926,6 +3928,9 @@ final class CompanionViewModel: ObservableObject {
 
         if captureMode == "stream_pair" {
             streamHandshakeLookupId = lookup.id
+            if isLiveCasting || isLiveCastActive || isStartingLiveCast {
+                return
+            }
             if cameraStream != nil || isAutoCaptureInFlight {
                 await stopCameraStreamOnly()
                 isAutoCaptureInFlight = false
@@ -3947,6 +3952,7 @@ final class CompanionViewModel: ObservableObject {
         }
 
         guard !isAutoCaptureInFlight else { return }
+        guard !isLiveCasting, !isLiveCastActive, !isStartingLiveCast else { return }
 
         let captureAttemptToken = lookupCaptureAttemptToken(lookup)
         if lastCaptureAttemptToken == captureAttemptToken {
@@ -4021,6 +4027,7 @@ final class CompanionViewModel: ObservableObject {
     }
 
     private func performOneShotCapture(for lookup: ImageLookup) async {
+        guard !isLiveCasting, !isLiveCastActive, !isStartingLiveCast else { return }
         pendingCaptureLookupId = lookup.id
         pendingCaptureLookupType = lookup.lookupType ?? (lookup.provider == "local" ? "barcode" : "image")
         lastCaptureAttemptToken = lookupCaptureAttemptToken(lookup)
@@ -4530,6 +4537,7 @@ final class CompanionViewModel: ObservableObject {
                 self.hasLiveFrame = true
                 if self.isLiveCastActive {
                     self.castWebRTC.pushGlassesFrame(frame)
+                    self.castPreviewImage = image
                 }
                 if !quiet, !photoCaptureOnly {
                     self.previewImage = image
@@ -4748,8 +4756,9 @@ final class CompanionViewModel: ObservableObject {
         relaySignaling.onGlassesLeft = { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                if self.isLiveCasting {
-                    self.endLiveCast()
+                // Glasses WS can drop while the phone keeps streaming; don't kill the camera.
+                if !self.isLiveCasting {
+                    return
                 }
             }
         }
@@ -4926,24 +4935,22 @@ final class CompanionViewModel: ObservableObject {
     }
 
     private func performLiveCast(triggeredByGlasses: Bool) async {
-        if let castTask, !castTask.isCancelled {
-            if isLiveCasting || isStartingLiveCast {
-                return
-            }
-            castTask.cancel()
+        if isLiveCasting || isStartingLiveCast {
+            return
         }
 
+        castTask?.cancel()
+        isStartingLiveCast = true
+        isLiveCastActive = true
+
         castTask = Task { @MainActor in
-            defer { castTask = nil }
-
-            isStartingLiveCast = true
-            isLiveCastActive = true
-            configureCastRelay()
-            relaySignaling.status = "Turning on glasses camera…"
-
             defer {
                 isStartingLiveCast = false
+                castTask = nil
             }
+
+            configureCastRelay()
+            relaySignaling.status = "Turning on glasses camera…"
 
             guard await ensureBluetoothPoweredOn(actionName: "Live Stream") else {
                 relaySignaling.sendSignal(type: "stream-error", payload: ["message": "Bluetooth is off"])
@@ -4976,12 +4983,13 @@ final class CompanionViewModel: ObservableObject {
                     try? await Task.sleep(nanoseconds: 500_000_000)
                 }
             } catch {
-                if !Task.isCancelled {
-                    let msg = error.localizedDescription
-                    relaySignaling.sendSignal(type: "stream-error", payload: ["message": msg])
-                    relaySignaling.status = msg
-                    showError("Live stream failed: \(msg)")
+                if Task.isCancelled {
+                    return
                 }
+                let msg = error.localizedDescription
+                relaySignaling.sendSignal(type: "stream-error", payload: ["message": msg])
+                relaySignaling.status = msg
+                showError("Live stream failed: \(msg)")
                 endLiveCast()
             }
         }
@@ -4995,6 +5003,7 @@ final class CompanionViewModel: ObservableObject {
         isStartingLiveCast = false
         castTask?.cancel()
         castTask = nil
+        castPreviewImage = nil
         Task { await stopCameraStreamOnly() }
         castWebRTC.stopStream()
         relaySignaling?.status = relaySignaling?.connected == true

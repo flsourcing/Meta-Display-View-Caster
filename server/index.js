@@ -215,13 +215,18 @@ wss.on('connection', (ws) => {
       case 'register-relay': {
         role = 'relay';
         const reconnectId = typeof msg.sessionId === 'string' ? msg.sessionId : '';
-        let session = reconnectId ? getSession(reconnectId) : null;
+        const lobby = sessions.get(PUBLIC_LOBBY_ID);
+        const lobbyHasViewers = !!(lobby?.viewers?.size);
+        let session = null;
 
-        if (!session) {
-          const lobby = sessions.get(PUBLIC_LOBBY_ID);
-          if (lobby && !lobby.relayWs) {
-            session = lobby;
-          }
+        if (lobbyHasViewers && lobby) {
+          session = lobby;
+        } else if (reconnectId) {
+          session = getSession(reconnectId);
+        }
+
+        if (!session && lobby && !lobby.relayWs) {
+          session = lobby;
         }
 
         if (session) {
@@ -252,6 +257,9 @@ wss.on('connection', (ws) => {
           rotateCode(session);
           sessions.set(sessionId, session);
         }
+
+        ws.castSessionId = sessionId;
+        ws.castRole = role;
 
         send(ws, { type: 'relay-registered', role: 'relay', sessionId, ...sessionPayload(session) });
         if (session.glassesWs) {
@@ -326,6 +334,9 @@ wss.on('connection', (ws) => {
         });
         sessionId = session.sessionId;
         ws.viewerId = viewerId;
+        ws.castSessionId = sessionId;
+        ws.castRole = role;
+        ws.castViewerId = viewerId;
         const viewers = buildViewerList(session);
         send(ws, {
           type: 'viewer-ack',
@@ -351,18 +362,21 @@ wss.on('connection', (ws) => {
       }
 
       case 'chat-message': {
-        const session = getSession(sessionId);
-        if (!session || role !== 'viewer' || !viewerId) {
+        const activeSessionId = ws.castSessionId || sessionId;
+        const activeRole = ws.castRole || role;
+        const activeViewerId = ws.castViewerId || viewerId;
+        const session = getSession(activeSessionId);
+        if (!session || activeRole !== 'viewer' || !activeViewerId) {
           send(ws, { type: 'error', message: 'Not in a session.' });
           return;
         }
         const text = String(msg.text || '').trim().slice(0, 500);
         if (!text) return;
-        const viewer = session.viewers.get(viewerId);
+        const viewer = session.viewers.get(activeViewerId);
         const payload = {
           type: 'chat-message',
           id: randomUUID(),
-          viewerId,
+          viewerId: activeViewerId,
           name: viewer?.name || 'Guest',
           text,
           at: Date.now(),
@@ -507,23 +521,26 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    if (!sessionId) return;
-    const session = getSession(sessionId);
+    const activeSessionId = ws.castSessionId || sessionId;
+    const activeRole = ws.castRole || role;
+    const activeViewerId = ws.castViewerId || viewerId;
+    if (!activeSessionId) return;
+    const session = getSession(activeSessionId);
     if (!session) return;
 
-    if (role === 'relay') {
+    if (activeRole === 'relay') {
       session.relayWs = null;
       session.relayDetachedAt = Date.now();
       session.streaming = false;
       broadcast(session, { type: 'relay-offline', message: 'Phone relay paused — reopen the phone app.' }, ws);
-    } else if (role === 'glasses') {
+    } else if (activeRole === 'glasses') {
       session.glassesWs = null;
       broadcast(session, { type: 'glasses-left' }, ws);
-    } else if (role === 'desktop') {
+    } else if (activeRole === 'desktop') {
       session.desktopWs = null;
       broadcast(session, { type: 'desktop-left' }, ws);
-    } else if (role === 'viewer' && viewerId) {
-      removeViewer(session, viewerId);
+    } else if (activeRole === 'viewer' && activeViewerId) {
+      removeViewer(session, activeViewerId);
     }
   });
 });
