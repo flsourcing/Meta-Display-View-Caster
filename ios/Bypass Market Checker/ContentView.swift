@@ -4754,7 +4754,8 @@ final class CompanionViewModel: ObservableObject {
             throw APIError(message: "Meta wearables configuration is invalid.")
         }
 
-        wearablesStatus = "Starting glasses camera…"
+        wearablesStatus = "Turning on glasses camera…"
+        relaySignaling?.status = "Turning on glasses camera…"
         beginCompanionBackgroundTask()
 
         let monitor = bluetoothMonitorInstance()
@@ -4762,35 +4763,38 @@ final class CompanionViewModel: ObservableObject {
             throw APIError(message: "Bluetooth is off. Turn Bluetooth on and retry.")
         }
 
-        let ready = await ensureReadyDeviceSession(showStatus: false, timeoutSeconds: 30)
-        guard ready else {
-            throw APIError(message: "No eligible device available.")
+        if readyDeviceSession?.state != .started {
+            guard await ensureReadyDeviceSession(showStatus: false, timeoutSeconds: 15) else {
+                throw APIError(message: "No eligible device available.")
+            }
         }
         glassesPreparedForCast = true
 
         if cameraStream != nil {
-            await stopCameraStreamOnly()
+            wearablesStatus = "Glasses camera already active."
+            return
         }
 
         do {
             try await startGlassesStreamAttempt(
                 quiet: true,
                 photoCaptureOnly: false,
-                deviceTimeoutSeconds: 30
+                deviceTimeoutSeconds: 20
             )
         } catch {
-            if error.localizedDescription.contains("No eligible device available") {
+            if error.localizedDescription.contains("No eligible device available")
+                || error.localizedDescription.contains("No DAT device") {
                 wearablesStatus = "Re-syncing with Meta AI, then retrying camera…"
                 openMetaAIApp()
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 readyDeviceSession = nil
-                guard await ensureReadyDeviceSession(showStatus: false, timeoutSeconds: 30) else {
+                guard await ensureReadyDeviceSession(showStatus: false, timeoutSeconds: 20) else {
                     throw error
                 }
                 try await startGlassesStreamAttempt(
                     quiet: true,
                     photoCaptureOnly: false,
-                    deviceTimeoutSeconds: 30
+                    deviceTimeoutSeconds: 20
                 )
                 return
             }
@@ -4800,13 +4804,13 @@ final class CompanionViewModel: ObservableObject {
                 readyDeviceSession = nil
                 wearablesStatus = "DAT connection dropped. Retrying camera…"
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
-                guard await ensureReadyDeviceSession(showStatus: false, timeoutSeconds: 30) else {
+                guard await ensureReadyDeviceSession(showStatus: false, timeoutSeconds: 20) else {
                     throw error
                 }
                 try await startGlassesStreamAttempt(
                     quiet: true,
                     photoCaptureOnly: false,
-                    deviceTimeoutSeconds: 30
+                    deviceTimeoutSeconds: 20
                 )
                 return
             }
@@ -4866,11 +4870,15 @@ final class CompanionViewModel: ObservableObject {
     }
 
     func handleCastStartFromGlasses() async {
+        configureCastRelay()
+        relaySignaling.sendSignal(type: "stream-starting")
         wakeCastFromGlasses()
         await performLiveCast(triggeredByGlasses: true)
     }
 
     func userStartLiveCast() async {
+        configureCastRelay()
+        relaySignaling.sendSignal(type: "stream-starting")
         await performLiveCast(triggeredByGlasses: false)
     }
 
@@ -4884,7 +4892,12 @@ final class CompanionViewModel: ObservableObject {
     }
 
     private func performLiveCast(triggeredByGlasses: Bool) async {
-        if castTask != nil { return }
+        if let castTask, !castTask.isCancelled {
+            if isLiveCasting || isStartingLiveCast {
+                return
+            }
+            castTask.cancel()
+        }
 
         castTask = Task { @MainActor in
             defer { castTask = nil }
@@ -4892,9 +4905,7 @@ final class CompanionViewModel: ObservableObject {
             isStartingLiveCast = true
             isLiveCastActive = true
             configureCastRelay()
-            relaySignaling.status = triggeredByGlasses
-                ? "Live Stream from glasses — starting camera…"
-                : "Starting live cast…"
+            relaySignaling.status = "Turning on glasses camera…"
 
             defer {
                 isStartingLiveCast = false
@@ -4905,14 +4916,17 @@ final class CompanionViewModel: ObservableObject {
                 endLiveCast()
                 return
             }
-            guard await ensureRegistered(actionName: "Live Stream") else {
-                relaySignaling.sendSignal(type: "stream-error", payload: ["message": "Not registered with Meta AI"])
-                endLiveCast()
-                return
+
+            if !isRegistrationStateReady(Wearables.shared.registrationState) {
+                guard await ensureRegistered(actionName: "Live Stream") else {
+                    relaySignaling.sendSignal(type: "stream-error", payload: ["message": "Not registered with Meta AI"])
+                    endLiveCast()
+                    return
+                }
             }
 
             do {
-                relaySignaling.status = "Starting glasses camera…"
+                relaySignaling.sendSignal(type: "stream-starting")
                 beginCompanionBackgroundTask()
 
                 try await startContinuousGlassesStreamForCast()

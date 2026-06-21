@@ -22,6 +22,8 @@
   };
 
   const KEY_COOLDOWN_MS = 450;
+  const START_RETRY_MS = 2000;
+  const START_RETRY_MAX = 4;
 
   let ws = null;
   let dataConn = null;
@@ -30,9 +32,11 @@
   let streaming = false;
   let digits = presetCode || '';
   let lastKeyAction = { key: '', at: 0 };
+  let startRetryTimer = null;
+  let startRetryCount = 0;
 
   if (els.versionLabel) {
-    els.versionLabel.textContent = useWS ? 'ws-v28' : `v${CasterSignaling.APP_VERSION}`;
+    els.versionLabel.textContent = useWS ? 'ws-v29' : `v${CasterSignaling.APP_VERSION}`;
   }
 
   function setStatus(kind, text) {
@@ -85,14 +89,49 @@
     els.connectedView.classList.remove('hidden');
     els.connectedLabel.textContent = 'Ready';
     if (els.sessionCode) els.sessionCode.textContent = digits;
-    els.streamHint.textContent = 'Keep View Caster open on phone, then press Enter on Live Stream.';
+    els.streamHint.textContent = 'Live Stream turns on glasses camera via phone app.';
     setStatus('connected', 'Ready');
     els.streamBtn.focus();
   }
 
+  function clearStartRetry() {
+    if (startRetryTimer) {
+      window.clearInterval(startRetryTimer);
+      startRetryTimer = null;
+    }
+    startRetryCount = 0;
+  }
+
+  function sendStartStream() {
+    if (useWS) CasterWS.send(ws, { type: 'start-stream' });
+    else CasterSignaling.sendData(dataConn, { type: 'start-stream' });
+  }
+
+  function wakePhoneApp() {
+    const url = 'bypassmarketchecker://cast/start';
+    try {
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = url;
+      document.body.appendChild(iframe);
+      window.setTimeout(() => iframe.remove(), 1200);
+      const a = document.createElement('a');
+      a.href = url;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (_) { /* ignore */ }
+  }
+
   function bindStreamMessages() {
     const onMsg = (msg) => {
+      if (msg?.type === 'stream-starting') {
+        els.streamHint.textContent = 'Phone is turning on glasses camera…';
+        setStatus('waiting', 'Starting camera…');
+      }
       if (msg?.type === 'stream-started') {
+        clearStartRetry();
         streaming = true;
         els.streamBtn.textContent = 'Stop Stream';
         els.streamBtn.classList.add('active');
@@ -100,14 +139,16 @@
         setStatus('connected', 'Casting');
       }
       if (msg?.type === 'stream-error') {
+        clearStartRetry();
         streaming = false;
         els.streamBtn.textContent = 'Live Stream';
         els.streamBtn.classList.remove('active');
-        const errText = msg.message || 'Stream failed — keep View Caster open on phone and tap Prepare Glasses first.';
+        const errText = msg.message || 'Stream failed — open View Caster on phone and tap Prepare Glasses.';
         els.streamHint.textContent = errText;
         setStatus('error', errText);
       }
       if (msg?.type === 'stop-stream') {
+        clearStartRetry();
         streaming = false;
         els.streamBtn.textContent = 'Live Stream';
         els.streamBtn.classList.remove('active');
@@ -121,6 +162,7 @@
         try { onMsg(JSON.parse(ev.data)); } catch { /* ignore */ }
       });
       ws.addEventListener('close', () => {
+        clearStartRetry();
         connected = false;
         setStatus('error', 'Disconnected');
         els.joinBtn.disabled = false;
@@ -128,6 +170,7 @@
     } else if (dataConn) {
       dataConn.on('data', onMsg);
       dataConn.on('close', () => {
+        clearStartRetry();
         connected = false;
         setStatus('error', 'Disconnected');
         els.joinBtn.disabled = false;
@@ -164,6 +207,7 @@
     if (isDuplicateKey('stream')) return;
 
     if (streaming) {
+      clearStartRetry();
       if (useWS) CasterWS.send(ws, { type: 'stop-stream' });
       else CasterSignaling.sendData(dataConn, { type: 'stop-stream' });
       streaming = false;
@@ -171,10 +215,24 @@
       els.streamBtn.classList.remove('active');
       els.streamHint.textContent = 'Press Enter on Live Stream to cast again.';
     } else {
-      els.streamHint.textContent = 'Starting camera on phone…';
+      clearStartRetry();
+      els.streamHint.textContent = 'Turning on glasses camera…';
       setStatus('waiting', 'Starting camera…');
-      if (useWS) CasterWS.send(ws, { type: 'start-stream' });
-      else CasterSignaling.sendData(dataConn, { type: 'start-stream' });
+      wakePhoneApp();
+      sendStartStream();
+      startRetryCount = 1;
+      startRetryTimer = window.setInterval(() => {
+        if (streaming || startRetryCount >= START_RETRY_MAX) {
+          clearStartRetry();
+          if (!streaming) {
+            els.streamHint.textContent = 'Phone not responding — open View Caster and tap Prepare Glasses.';
+            setStatus('error', 'Phone not responding');
+          }
+          return;
+        }
+        startRetryCount += 1;
+        sendStartStream();
+      }, START_RETRY_MS);
     }
   }
 

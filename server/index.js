@@ -177,8 +177,25 @@ wss.on('connection', (ws) => {
         break;
       }
 
-      case 'start-stream':
+      case 'start-stream': {
+        const session = getSession(sessionId);
+        if (!session) {
+          send(ws, { type: 'error', message: 'Not in a session.' });
+          return;
+        }
+        if (!session.relayWs) {
+          send(ws, {
+            type: 'stream-error',
+            message: 'Phone relay offline — open View Caster on your phone first.',
+          });
+          return;
+        }
+        broadcast(session, msg, ws);
+        break;
+      }
+
       case 'stop-stream':
+      case 'stream-starting':
       case 'stream-started':
       case 'stream-error':
       case 'offer':
