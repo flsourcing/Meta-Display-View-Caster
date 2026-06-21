@@ -60,14 +60,14 @@ Legacy Safari relay (`relay.html` + PeerJS) still exists but is not recommended.
 
 ## Build IPA locally (Mac + Xcode)
 
+The `ios/` folder is a direct fork of Bypass Market Checker Main — the app that already works with Meta AI on your phone.
+
 ```bash
 cd ios
-brew install xcodegen
-xcodegen generate
-open ViewCasterRelay.xcodeproj
+open "Bypass Market Checker.xcodeproj"
 ```
 
-Archive and export, or use the GitHub Action above for an unsigned IPA.
+Archive and export, or use the GitHub Action for an unsigned IPA on each push to `main`.
 
 ## License
 

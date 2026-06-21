@@ -5,5 +5,10 @@ node_modules/
 .DS_Store
 Thumbs.db
 ios/build/
-ios/*.xcodeproj/
-ios/*.xcworkspace/
+ios/ViewCasterRelay.xcodeproj/
+ios/ViewCasterRelay.xcworkspace/
+# Bypass fork — committed for CI (xcodegen removed)
+!ios/Bypass Market Checker.xcodeproj/
+!ios/Bypass Market Checker.xcodeproj/**
+ios/Bypass Market Checker.xcodeproj/**/xcuserdata/
+ios/Bypass Market Checker.xcodeproj/**/*.xcuserstate

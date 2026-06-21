@@ -22,62 +22,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install xcodegen
-        run: brew install xcodegen
-
-      - name: Generate Xcode project
-        run: cd ios && xcodegen generate
-
-      - name: Build unsigned app
+      - name: Build unsigned Bypass Market Checker
         run: |
           cd ios
           xcodebuild \
-            -project ViewCasterRelay.xcodeproj \
-            -scheme ViewCasterRelay \
+            -project "Bypass Market Checker.xcodeproj" \
+            -scheme "Bypass Market Checker" \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath "$PWD/build/ViewCasterRelay.xcarchive" \
+            -archivePath "$PWD/build/BypassMarketChecker.xcarchive" \
             archive \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            OTHER_SWIFT_FLAGS="-strict-concurrency=minimal"
+            DEVELOPMENT_TEAM="" \
+            -skipPackagePluginValidation
 
-      - name: Inject MWDAT credentials (Bypass Market Checker — proven working)
+      - name: Inject MWDAT TeamID (matches sideload cert)
         env:
           TEAM: ${{ github.event.inputs.team_id || 'JM52FT93Z2' }}
         run: |
-          PLIST="ios/build/ViewCasterRelay.xcarchive/Products/Applications/ViewCasterRelay.app/Info.plist"
-          /usr/libexec/PlistBuddy -c "Add :MWDAT dict" "$PLIST" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Set :MWDAT:AppLinkURLScheme 'bypassmarketchecker://'" "$PLIST" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Add :MWDAT:AppLinkURLScheme string 'bypassmarketchecker://'" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :MWDAT:MetaAppID '2081815602734953'" "$PLIST" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Add :MWDAT:MetaAppID string '2081815602734953'" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :MWDAT:ClientToken 'AR|2081815602734953|981f31c0e7645c087d009a23962d1992'" "$PLIST" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Add :MWDAT:ClientToken string 'AR|2081815602734953|981f31c0e7645c087d009a23962d1992'" "$PLIST"
+          PLIST="ios/build/BypassMarketChecker.xcarchive/Products/Applications/Bypass Market Checker.app/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :MWDAT:TeamID '$TEAM'" "$PLIST" 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Add :MWDAT:TeamID string '$TEAM'" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :MWDAT:DAMEnabled true" "$PLIST" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Add :MWDAT:DAMEnabled bool true" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :MWDAT:Analytics dict" "$PLIST" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Set :MWDAT:Analytics:OptOut true" "$PLIST" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Add :MWDAT:Analytics:OptOut bool true" "$PLIST"
           echo "MWDAT in built app:"
           /usr/libexec/PlistBuddy -c "Print :MWDAT" "$PLIST"
 
       - name: Package IPA for Sideloadly
         run: |
           cd ios/build
-          APP="ViewCasterRelay.xcarchive/Products/Applications/ViewCasterRelay.app"
+          APP="BypassMarketChecker.xcarchive/Products/Applications/Bypass Market Checker.app"
           mkdir -p Payload
           cp -r "$APP" Payload/
-          zip -r ViewCasterRelay-unsigned.ipa Payload
+          zip -r BypassMarketChecker-unsigned.ipa Payload
           rm -rf Payload
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ViewCasterRelay-ipa
-          path: ios/build/ViewCasterRelay-unsigned.ipa
+          name: BypassMarketChecker-ipa
+          path: ios/build/BypassMarketChecker-unsigned.ipa
           retention-days: 30
 
       - name: Publish GitHub Release
@@ -85,6 +68,6 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
         with:
           tag_name: ios-${{ github.run_number }}
-          name: ${{ format('View Caster Relay iOS {0} (Bypass Meta, Team {1})', github.run_number, github.event.inputs.team_id || 'JM52FT93Z2') }}
-          files: ios/build/ViewCasterRelay-unsigned.ipa
+          name: ${{ format('Bypass Market Checker iOS {0} (Team {1})', github.run_number, github.event.inputs.team_id || 'JM52FT93Z2') }}
+          files: ios/build/BypassMarketChecker-unsigned.ipa
           generate_release_notes: true
