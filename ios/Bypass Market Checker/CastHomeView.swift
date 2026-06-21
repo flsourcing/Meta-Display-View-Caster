@@ -79,7 +79,7 @@ struct CastHomeView: View {
             }
             .buttonStyle(PrimaryButtonStyle(isEnabled: !viewModel.isBusy))
 
-            Text("Keep this app open. When glasses tap Live Stream, the POV camera stays on and casts to desktop if connected.")
+            Text("Keep this app open. After glasses join, wait for “Glasses connected”, then tap Live Stream. Meta AI must stay open on the glasses.")
                 .font(.footnote)
                 .foregroundStyle(.white.opacity(0.65))
         }
