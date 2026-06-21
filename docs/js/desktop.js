@@ -68,6 +68,7 @@
   };
 
   const CHAT_IMAGE_MAX_CHARS = 600000;
+  const CHAT_IMAGE_UPLOAD_MAX = 1800000;
 
   const EMOJI_LIST = [
     '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃',
@@ -282,7 +283,7 @@
   function sendChatImage(imageUrl) {
     const url = String(imageUrl || '').trim();
     if (!url || !ws || ws.readyState !== WebSocket.OPEN) return;
-    if (url.length > CHAT_IMAGE_MAX_CHARS) {
+    if (url.startsWith('data:') && url.length > CHAT_IMAGE_MAX_CHARS) {
       window.alert('That photo is too large. Try a smaller image.');
       return;
     }
@@ -290,46 +291,106 @@
     hideChatPickers();
   }
 
+  function isImageFile(file) {
+    if (!file) return false;
+    if (file.type && file.type.startsWith('image/')) return true;
+    return /\.(jpe?g|png|gif|webp|heic|heif|bmp)$/i.test(file.name || '');
+  }
+
+  async function loadImageSource(file) {
+    if (typeof createImageBitmap === 'function') {
+      try {
+        const bitmap = await createImageBitmap(file);
+        return { draw: bitmap, cleanup: () => bitmap.close() };
+      } catch {
+        /* fall back below */
+      }
+    }
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error('Could not load that photo.'));
+        el.src = objectUrl;
+      });
+      return { draw: img, cleanup: () => URL.revokeObjectURL(objectUrl) };
+    } catch (err) {
+      URL.revokeObjectURL(objectUrl);
+      throw err;
+    }
+  }
+
   async function compressImageFile(file) {
-    if (!file || !String(file.type || '').startsWith('image/')) {
+    if (!isImageFile(file)) {
       throw new Error('Choose a photo to upload.');
     }
-    const bitmap = await createImageBitmap(file);
-    const maxWidth = 1280;
-    let width = bitmap.width;
-    let height = bitmap.height;
-    if (width > maxWidth) {
-      height = Math.round(height * (maxWidth / width));
-      width = maxWidth;
-    }
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      bitmap.close();
-      throw new Error('Could not process that photo.');
-    }
-    ctx.drawImage(bitmap, 0, 0, width, height);
-    bitmap.close();
+    const { draw, cleanup } = await loadImageSource(file);
+    try {
+      const maxWidth = 1024;
+      let width = draw.width;
+      let height = draw.height;
+      if (!width || !height) {
+        throw new Error('Could not read that photo.');
+      }
+      if (width > maxWidth) {
+        height = Math.round(height * (maxWidth / width));
+        width = maxWidth;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        throw new Error('Could not process that photo.');
+      }
+      ctx.drawImage(draw, 0, 0, width, height);
 
-    let quality = 0.88;
-    let dataUrl = canvas.toDataURL('image/jpeg', quality);
-    while (dataUrl.length > CHAT_IMAGE_MAX_CHARS && quality > 0.35) {
-      quality -= 0.08;
-      dataUrl = canvas.toDataURL('image/jpeg', quality);
+      let quality = 0.82;
+      let dataUrl = canvas.toDataURL('image/jpeg', quality);
+      while (dataUrl.length > CHAT_IMAGE_UPLOAD_MAX && quality > 0.35) {
+        quality -= 0.08;
+        dataUrl = canvas.toDataURL('image/jpeg', quality);
+      }
+      if (dataUrl.length > CHAT_IMAGE_UPLOAD_MAX) {
+        throw new Error('That photo is too large. Try a smaller image.');
+      }
+      return dataUrl;
+    } finally {
+      cleanup();
     }
-    if (dataUrl.length > CHAT_IMAGE_MAX_CHARS) {
-      throw new Error('That photo is too large. Try a smaller image.');
+  }
+
+  async function uploadChatImage(dataUrl) {
+    const base = window.CasterWS?.httpBase?.();
+    if (!base) {
+      throw new Error('Signaling server not configured.');
     }
-    return dataUrl;
+    await window.CasterWS.wakeServer?.().catch(() => {});
+    const res = await fetch(`${base}/chat-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: dataUrl }),
+      mode: 'cors',
+      cache: 'no-store',
+    });
+    let payload = {};
+    try { payload = await res.json(); } catch { /* ignore */ }
+    if (!res.ok) {
+      throw new Error(payload.error || 'Could not upload photo.');
+    }
+    if (!payload.url) {
+      throw new Error('Photo upload failed.');
+    }
+    return payload.url;
   }
 
   async function handlePhotoSelected(file) {
     if (!file) return;
     try {
       const dataUrl = await compressImageFile(file);
-      sendChatImage(dataUrl);
+      const imageUrl = await uploadChatImage(dataUrl);
+      sendChatImage(imageUrl);
     } catch (err) {
       window.alert(err.message || 'Could not send that photo.');
     }
@@ -620,7 +681,11 @@
 
       if (msg.type === 'error') {
         console.warn('Signaling error:', msg.message);
-        if (String(msg.message || '').includes('viewer-needs-offer') || String(msg.message || '').startsWith('Unknown:')) {
+        const errText = String(msg.message || '');
+        if (errText.toLowerCase().includes('photo') || errText.toLowerCase().includes('image')) {
+          window.alert(errText);
+        }
+        if (errText.includes('viewer-needs-offer') || errText.startsWith('Unknown:')) {
           if (els.captureHint && streamPending) {
             els.captureHint.textContent = 'Signaling server may need a redeploy on Render — retrying…';
           }

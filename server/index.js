@@ -11,6 +11,34 @@ const VIEWER_PASSWORD = process.env.VIEWER_PASSWORD || 'Wedding';
 const PUBLIC_LOBBY_ID = 'public-cast';
 const CHAT_HISTORY_LIMIT = 100;
 const CHAT_IMAGE_MAX_CHARS = 600_000;
+const CHAT_IMAGE_UPLOAD_MAX = 2_000_000;
+const CHAT_IMAGE_TTL_MS = 3_600_000;
+const CHAT_IMAGE_MAX_STORE = 80;
+
+/** @type {Map<string, { dataUrl: string, at: number }>} */
+const chatImages = new Map();
+
+function pruneChatImages() {
+  const now = Date.now();
+  for (const [id, item] of chatImages.entries()) {
+    if (now - item.at > CHAT_IMAGE_TTL_MS) chatImages.delete(id);
+  }
+  while (chatImages.size > CHAT_IMAGE_MAX_STORE) {
+    const oldest = chatImages.keys().next().value;
+    if (oldest) chatImages.delete(oldest);
+    else break;
+  }
+}
+
+function publicBase(req) {
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  return `${proto}://${host}`;
+}
+
+function isAllowedChatImageUrl(url) {
+  return /^https?:\/\/.+\/chat-image\/[0-9a-f-]{36}$/i.test(String(url || '').trim());
+}
 
 function passwordsMatch(input, expected) {
   return String(input || '').trim().toLowerCase() === String(expected || '').trim().toLowerCase();
@@ -307,6 +335,43 @@ app.get('/live-status', (_req, res) => {
   });
 });
 
+app.post('/chat-image', express.json({ limit: '2mb' }), (req, res) => {
+  const dataUrl = String(req.body?.image || '').trim();
+  if (!dataUrl.startsWith('data:image/')) {
+    res.status(400).json({ error: 'Invalid photo format.' });
+    return;
+  }
+  if (dataUrl.length > CHAT_IMAGE_UPLOAD_MAX) {
+    res.status(413).json({ error: 'Photo is too large.' });
+    return;
+  }
+  const match = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
+  if (!match) {
+    res.status(400).json({ error: 'Invalid photo data.' });
+    return;
+  }
+  pruneChatImages();
+  const id = randomUUID();
+  chatImages.set(id, { dataUrl, at: Date.now() });
+  res.json({ url: `${publicBase(req)}/chat-image/${id}` });
+});
+
+app.get('/chat-image/:id', (req, res) => {
+  const item = chatImages.get(String(req.params.id || ''));
+  if (!item) {
+    res.status(404).end();
+    return;
+  }
+  const match = item.dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
+  if (!match) {
+    res.status(404).end();
+    return;
+  }
+  res.setHeader('Content-Type', match[1]);
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(Buffer.from(match[2], 'base64'));
+});
+
 const httpServer = createServer(app);
 const wss = new WebSocketServer({ server: httpServer });
 
@@ -483,8 +548,12 @@ wss.on('connection', (ws) => {
         if (kind === 'text' && !text) return;
         if (kind === 'gif' && !gifUrl) return;
         if (kind === 'image') {
-          if (!imageUrl.startsWith('data:image/')) return;
-          if (imageUrl.length > CHAT_IMAGE_MAX_CHARS) return;
+          const inline = imageUrl.startsWith('data:image/');
+          const hosted = isAllowedChatImageUrl(imageUrl);
+          if ((!inline && !hosted) || (inline && imageUrl.length > CHAT_IMAGE_MAX_CHARS)) {
+            send(ws, { type: 'error', message: 'Could not send photo. Try again or use a smaller image.' });
+            return;
+          }
         }
         const viewer = session.viewers.get(activeViewerId);
         const payload = {
