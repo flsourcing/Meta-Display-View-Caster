@@ -27,6 +27,7 @@ final class SignalingClient: ObservableObject {
     var onAnswer: ((String) -> Void)?
     var onIceCandidate: ((String, Int32, String?) -> Void)?
     var onGlassesJoined: (() -> Void)?
+    var onGlassesLeft: (() -> Void)?
 
     init(serverURL: URL) {
         self.serverURL = serverURL
@@ -237,6 +238,7 @@ final class SignalingClient: ObservableObject {
             status = "Desktop disconnected"
         case "glasses-left":
             glassesLinked = false
+            onGlassesLeft?()
         case "start-stream":
             onStartStream?()
         case "stop-stream":

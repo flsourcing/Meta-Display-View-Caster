@@ -112,7 +112,7 @@ struct CastHomeView: View {
         }
         .cardStyle()
         .onAppear {
-            viewModel.startCastRelayIfNeeded()
+            viewModel.startCastCompanionBridge()
         }
     }
 

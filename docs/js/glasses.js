@@ -161,6 +161,7 @@
     const urls = [
       'bypassmarketchecker://cast/start',
       'bypassmarketchecker://start',
+      'bypassmarketchecker://',
     ];
     for (const url of urls) {
       try {
@@ -191,10 +192,12 @@
       els.streamBtn.classList.remove('active');
     } else {
       openPhoneCompanion();
-      if (useWS) CasterWS.send(ws, { type: 'start-stream' });
-      else CasterSignaling.sendData(dataConn, { type: 'start-stream' });
       els.streamHint.textContent = 'Opening phone app…';
       setStatus('waiting', 'Starting on phone…');
+      window.setTimeout(() => {
+        if (useWS) CasterWS.send(ws, { type: 'start-stream' });
+        else CasterSignaling.sendData(dataConn, { type: 'start-stream' });
+      }, 1500);
     }
   }
 
