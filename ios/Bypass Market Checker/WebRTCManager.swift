@@ -22,6 +22,8 @@ final class WebRTCManager: NSObject {
     private var videoSource: RTCVideoSource?
     private var frameCapturer: FrameCapturer?
     private var localVideoTrack: RTCVideoTrack?
+    private var localAudioTrack: RTCAudioTrack?
+    private var audioEnabled = false
     private weak var signaling: SignalingClient?
 
     func attach(signaling: SignalingClient) {
@@ -30,6 +32,13 @@ final class WebRTCManager: NSObject {
 
     func prepareFactory() {
         _ = factory
+    }
+
+    func setAudioEnabled(_ enabled: Bool) {
+        audioEnabled = enabled
+        if !enabled {
+            localAudioTrack = nil
+        }
     }
 
     private func ensureSharedVideoTrack() {
@@ -42,12 +51,21 @@ final class WebRTCManager: NSObject {
         localVideoTrack = track
     }
 
+    private func ensureSharedAudioTrack() {
+        guard audioEnabled, localAudioTrack == nil else { return }
+        let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
+        let source = factory.audioSource(with: constraints)
+        localAudioTrack = factory.audioTrack(with: source, trackId: "audio0")
+    }
+
     func startStream() {
         ensureSharedVideoTrack()
+        ensureSharedAudioTrack()
     }
 
     func addViewer(viewerId: String) {
         ensureSharedVideoTrack()
+        ensureSharedAudioTrack()
         guard viewerConnections[viewerId] == nil else { return }
         guard let localVideoTrack else { return }
 
@@ -65,6 +83,9 @@ final class WebRTCManager: NSObject {
         guard let pc = factory.peerConnection(with: config, constraints: constraints, delegate: self) else { return }
 
         pc.add(localVideoTrack, streamIds: ["stream0"])
+        if let localAudioTrack {
+            pc.add(localAudioTrack, streamIds: ["stream0"])
+        }
         viewerConnections[viewerId] = ViewerConnection(viewerId: viewerId, pc: pc)
         pcToViewerId[ObjectIdentifier(pc)] = viewerId
 
@@ -129,6 +150,7 @@ final class WebRTCManager: NSObject {
         viewerConnections.removeAll()
         frameCapturer = nil
         localVideoTrack = nil
+        localAudioTrack = nil
         videoSource = nil
     }
 }

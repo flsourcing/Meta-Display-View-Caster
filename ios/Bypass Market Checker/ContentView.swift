@@ -91,6 +91,7 @@ struct ContentView: View {
                     ConnectionStatusPopover(
                         metaAIStatus: viewModel.metaAIStatusLabel,
                         cameraStatus: viewModel.cameraStatusLabel,
+                        audioStatus: viewModel.audioStatusLabel,
                         onDismiss: { viewModel.showConnectionPopover = false }
                     )
                     .padding(.top, 36)
@@ -157,6 +158,8 @@ struct ContentView: View {
                 setupRegistrationStep
             case .camera:
                 setupCameraStep
+            case .audio:
+                setupAudioStep
             case .finalize:
                 setupFinalizeStep
             }
@@ -171,7 +174,7 @@ struct ContentView: View {
 
     private var setupRegistrationStep: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Setup — Step 1 of 3")
+            Text("Setup — Step 1 of 4")
                 .font(.title3.bold())
                 .foregroundStyle(.white)
 
@@ -203,7 +206,7 @@ struct ContentView: View {
 
     private var setupCameraStep: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Setup — Step 2 of 3")
+            Text("Setup — Step 2 of 4")
                 .font(.title3.bold())
                 .foregroundStyle(.white)
 
@@ -233,9 +236,41 @@ struct ContentView: View {
         }
     }
 
+    private var setupAudioStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Setup — Step 3 of 4")
+                .font(.title3.bold())
+                .foregroundStyle(.white)
+
+            Text("Allow Microphone")
+                .font(.headline)
+                .foregroundStyle(.white.opacity(0.9))
+
+            setupStatusRow(
+                label: viewModel.audioSetupStatus == .success ? "Successful" : "Waiting for approval...",
+                isSuccess: viewModel.audioSetupStatus == .success
+            )
+
+            Button {
+                Task { await viewModel.requestAudioPermission() }
+            } label: {
+                Label("Allow Microphone", systemImage: "mic.badge.plus")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .disabled(viewModel.isBusy)
+
+            Text("Enables live audio from your glasses over Bluetooth. Approve the microphone prompt, then return here.")
+                .font(.footnote)
+                .foregroundStyle(.white.opacity(0.65))
+
+            setupNextButton
+        }
+    }
+
     private var setupFinalizeStep: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Setup — Step 3 of 3")
+            Text("Setup — Step 4 of 4")
                 .font(.title3.bold())
                 .foregroundStyle(.white)
 
@@ -243,7 +278,7 @@ struct ContentView: View {
                 .font(.headline)
                 .foregroundStyle(.green.opacity(0.9))
 
-            Text("Tap Get Started to open the pairing screen. Enter the code on desktop and glasses, then tap Live Stream on glasses.")
+            Text("Tap Get Started to open the pairing screen. Enter the code on glasses, then start Live Stream for video and audio.")
                 .font(.body)
                 .foregroundStyle(.white.opacity(0.85))
 
@@ -286,6 +321,7 @@ struct ContentView: View {
 struct ConnectionStatusPopover: View {
     let metaAIStatus: String
     let cameraStatus: String
+    let audioStatus: String
     let onDismiss: () -> Void
 
     var body: some View {
@@ -304,6 +340,7 @@ struct ConnectionStatusPopover: View {
 
             statusLine(label: "Meta AI", value: metaAIStatus)
             statusLine(label: "Camera", value: cameraStatus)
+            statusLine(label: "Microphone", value: audioStatus)
         }
         .padding(14)
         .background(.black.opacity(0.88), in: RoundedRectangle(cornerRadius: 16))
@@ -393,7 +430,13 @@ struct SettingsSheetView: View {
                             status: viewModel.cameraSetupStatus
                         ) { Task { await viewModel.requestCameraPermission() } }
 
-                        Text("When glasses tap Live Stream, this app opens the POV camera and relays video to desktop.")
+                        settingsRow(
+                            title: "Allow Microphone",
+                            icon: "mic.badge.plus",
+                            status: viewModel.audioSetupStatus
+                        ) { Task { await viewModel.requestAudioPermission() } }
+
+                        Text("When glasses tap Live Stream, this app opens the POV camera and relays video and audio to viewers.")
                             .font(.footnote)
                             .foregroundStyle(.white.opacity(0.65))
                     }
@@ -1554,7 +1597,8 @@ enum BarcodeScanner {
 enum SetupStep: Int {
     case registration = 1
     case camera = 2
-    case finalize = 3
+    case audio = 3
+    case finalize = 4
 }
 
 enum SetupItemStatus {
@@ -1853,6 +1897,7 @@ final class CompanionViewModel: ObservableObject {
     @Published var setupStep: SetupStep = .registration
     @Published var registrationSetupStatus: SetupItemStatus = .waiting
     @Published var cameraSetupStatus: SetupItemStatus = .waiting
+    @Published var audioSetupStatus: SetupItemStatus = .waiting
     @Published var showConnectionPopover = false
     @Published var showSettings = false
     @Published var showLookupHistory = false
@@ -1902,6 +1947,7 @@ final class CompanionViewModel: ObservableObject {
     private let tokenKey = "metaCloudToken"
     private let emailKey = "metaCloudEmail"
     private let cameraPermissionConfirmedKey = "datCameraPermissionConfirmed"
+    private let audioPermissionConfirmedKey = CastAudioManager.permissionConfirmedKey
     private let datConnectionReadyKey = "datConnectionReady"
     private let mobileSetupCompleteKey = "mobileSetupComplete"
     private let mobileSetupStepKey = "mobileSetupStep"
@@ -1931,6 +1977,7 @@ final class CompanionViewModel: ObservableObject {
     private var registrationOpenedAt: Date?
     private var registrationCompletedAt: Date?
     private var pendingCameraPermissionRetry = false
+    private var pendingAudioPermissionRetry = false
     private var datPrepareTask: Task<Bool, Never>?
     private var datPrepareBackgroundTask: Task<Void, Never>?
     private var autoDeviceSelector: AutoDeviceSelector?
@@ -1976,6 +2023,8 @@ final class CompanionViewModel: ObservableObject {
             return registrationSetupStatus == .success
         case .camera:
             return cameraSetupStatus == .success
+        case .audio:
+            return audioSetupStatus == .success
         case .finalize:
             return false
         }
@@ -1987,6 +2036,10 @@ final class CompanionViewModel: ObservableObject {
 
     var cameraStatusLabel: String {
         cameraSetupStatus == .success ? "Connected" : "Disconnected"
+    }
+
+    var audioStatusLabel: String {
+        audioSetupStatus == .success ? "Connected" : "Disconnected"
     }
 
     var currentEmail: String {
@@ -2067,7 +2120,8 @@ final class CompanionViewModel: ObservableObject {
         let savedStep = UserDefaults.standard.integer(forKey: mobileSetupStepKey)
         if savedStep == 0,
            isRegistrationStateReady(Wearables.shared.registrationState),
-           UserDefaults.standard.bool(forKey: cameraPermissionConfirmedKey) {
+           UserDefaults.standard.bool(forKey: cameraPermissionConfirmedKey),
+           UserDefaults.standard.bool(forKey: audioPermissionConfirmedKey) {
             setupStep = .finalize
             UserDefaults.standard.set(SetupStep.finalize.rawValue, forKey: mobileSetupStepKey)
             UserDefaults.standard.set(true, forKey: mobileSetupPendingRestartKey)
@@ -2075,7 +2129,9 @@ final class CompanionViewModel: ObservableObject {
             return
         }
 
-        if let step = SetupStep(rawValue: savedStep) {
+        if savedStep == 3, !UserDefaults.standard.bool(forKey: audioPermissionConfirmedKey) {
+            setupStep = UserDefaults.standard.bool(forKey: cameraPermissionConfirmedKey) ? .audio : .finalize
+        } else if let step = SetupStep(rawValue: savedStep) {
             setupStep = step
         } else {
             setupStep = .registration
@@ -2090,6 +2146,9 @@ final class CompanionViewModel: ObservableObject {
             setupStep = .camera
             Task { await validateCameraPermissionFlag() }
         case .camera:
+            setupStep = .audio
+            Task { await validateAudioPermissionFlag() }
+        case .audio:
             setupStep = .finalize
             UserDefaults.standard.set(true, forKey: mobileSetupPendingRestartKey)
         case .finalize:
@@ -2114,6 +2173,12 @@ final class CompanionViewModel: ObservableObject {
             cameraSetupStatus = .waiting
         }
 
+        if UserDefaults.standard.bool(forKey: audioPermissionConfirmedKey) {
+            audioSetupStatus = .success
+        } else if audioSetupStatus != .success {
+            audioSetupStatus = .waiting
+        }
+
         refreshGlassesConnectionStatus()
         updateReadyWearablesStatus()
     }
@@ -2135,6 +2200,8 @@ final class CompanionViewModel: ObservableObject {
         loadMobileSetupState()
         await validateCameraPermissionFlag()
         _ = await resolveCameraPermissionIfAlreadyGranted(shouldShowMessage: false)
+        await validateAudioPermissionFlag()
+        _ = await resolveAudioPermissionIfAlreadyGranted(shouldShowMessage: false)
         refreshSetupProgress()
         if isMobileSetupComplete {
             startCastCompanionBridge()
@@ -2483,6 +2550,14 @@ final class CompanionViewModel: ObservableObject {
                 _ = await resolveCameraPermissionIfAlreadyGranted(shouldShowMessage: false)
                 refreshSetupProgress()
             }
+
+            if pendingAudioPermissionRetry {
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                await finishPendingAudioPermissionIfPossible(showStatusMessage: !isMobileSetupComplete)
+            } else {
+                _ = await resolveAudioPermissionIfAlreadyGranted(shouldShowMessage: false)
+                refreshSetupProgress()
+            }
         }
     }
 
@@ -2829,6 +2904,115 @@ final class CompanionViewModel: ObservableObject {
         }
     }
 
+    func requestAudioPermission() async {
+        guard validateDATConfiguration() else { return }
+
+        isBusy = true
+        defer { isBusy = false }
+
+        if UserDefaults.standard.bool(forKey: audioPermissionConfirmedKey) {
+            markAudioPermissionGranted(shouldShowMessage: true)
+            return
+        }
+
+        if await resolveAudioPermissionIfAlreadyGranted(shouldShowMessage: true) {
+            return
+        }
+
+        if !isRegistrationStateReady(Wearables.shared.registrationState) {
+            wearablesStatus = "Register with Meta AI first."
+            showError("Tap Register With Meta AI first, then Allow Microphone.")
+            return
+        }
+
+        wearablesStatus = "Requesting microphone access for live cast audio..."
+        pendingAudioPermissionRetry = true
+
+        let granted = await CastAudioManager.shared.requestMicrophonePermission()
+        if granted {
+            markAudioPermissionGranted(shouldShowMessage: true)
+            return
+        }
+
+        if await resolveAudioPermissionIfAlreadyGranted(shouldShowMessage: true) {
+            return
+        }
+
+        pendingAudioPermissionRetry = true
+        wearablesStatus = "Waiting for microphone approval."
+        showMessage("Allow microphone access in Settings, then return here.")
+    }
+
+    private func finishPendingAudioPermissionIfPossible(showStatusMessage: Bool) async {
+        guard pendingAudioPermissionRetry else { return }
+        if await resolveAudioPermissionIfAlreadyGranted(shouldShowMessage: showStatusMessage) {
+            return
+        }
+        if showStatusMessage {
+            wearablesStatus = "Waiting for microphone approval."
+        }
+    }
+
+    private func resolveAudioPermissionIfAlreadyGranted(shouldShowMessage: Bool) async -> Bool {
+        if await CastAudioManager.shared.currentRecordPermissionGranted() {
+            markAudioPermissionGranted(shouldShowMessage: shouldShowMessage)
+            return true
+        }
+
+        if UserDefaults.standard.bool(forKey: audioPermissionConfirmedKey) {
+            await validateAudioPermissionFlag()
+            if UserDefaults.standard.bool(forKey: audioPermissionConfirmedKey) {
+                markAudioPermissionGranted(shouldShowMessage: shouldShowMessage)
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private func validateAudioPermissionFlag() async {
+        guard UserDefaults.standard.bool(forKey: audioPermissionConfirmedKey) else {
+            audioSetupStatus = .waiting
+            refreshGlassesConnectionStatus()
+            return
+        }
+
+        if await CastAudioManager.shared.currentRecordPermissionGranted() {
+            audioSetupStatus = .success
+            refreshGlassesConnectionStatus()
+            return
+        }
+
+        CastAudioManager.shared.clearPermissionFlag()
+        audioSetupStatus = .waiting
+        refreshGlassesConnectionStatus()
+    }
+
+    private func markAudioPermissionGranted(shouldShowMessage: Bool) {
+        pendingAudioPermissionRetry = false
+        CastAudioManager.shared.markPermissionGranted()
+        wearablesStatus = isMobileSetupComplete
+            ? "Microphone ready for live cast."
+            : "Microphone access approved."
+        refreshSetupProgress()
+        if shouldShowMessage {
+            showMessage(isMobileSetupComplete ? "Microphone Already Allowed" : "Microphone Allowed")
+        }
+    }
+
+    private func prepareCastAudioIfNeeded() async {
+        let includeAudio = CastAudioManager.shared.isPermissionConfirmed
+        castWebRTC.setAudioEnabled(includeAudio)
+        guard includeAudio else { return }
+        do {
+            try await CastAudioManager.shared.prepareForLiveCast()
+            castWebRTC.startStream()
+        } catch {
+            castWebRTC.setAudioEnabled(false)
+            wearablesStatus = "Live video only — \(error.localizedDescription)"
+        }
+    }
+
     private func beginGlassesConnectionSetup(showStatus: Bool) {
         datPrepareBackgroundTask?.cancel()
         datPrepareBackgroundTask = Task { [weak self] in
@@ -3054,6 +3238,9 @@ final class CompanionViewModel: ObservableObject {
     }
 
     private func startGlassesStreamForCapture(quiet: Bool, lookupId: String? = nil) async throws {
+        guard !isLiveCasting, !isLiveCastActive, !isStartingLiveCast else {
+            throw APIError(message: "Live cast is active.")
+        }
         let ready = await ensureReadyDeviceSession(showStatus: false, timeoutSeconds: 30)
         guard ready else {
             throw APIError(message: "No eligible device available.")
@@ -4562,6 +4749,11 @@ final class CompanionViewModel: ObservableObject {
 
         deviceSession = newDeviceSession
         cameraStream = stream
+
+        if isLiveCastActive {
+            await prepareCastAudioIfNeeded()
+        }
+
         await stream.start()
 
         if isLiveCastActive {
@@ -4773,6 +4965,7 @@ final class CompanionViewModel: ObservableObject {
         if isLiveCasting, cameraStream != nil {
             castWebRTC.prepareFactory()
             castWebRTC.attach(signaling: relaySignaling)
+            castWebRTC.setAudioEnabled(CastAudioManager.shared.isPermissionConfirmed)
             castWebRTC.startStream()
             castWebRTC.addViewer(viewerId: viewerId)
         } else {
@@ -4783,6 +4976,7 @@ final class CompanionViewModel: ObservableObject {
     private func connectPendingViewers() {
         castWebRTC.prepareFactory()
         castWebRTC.attach(signaling: relaySignaling)
+        castWebRTC.setAudioEnabled(CastAudioManager.shared.isPermissionConfirmed)
         castWebRTC.startStream()
         for viewerId in pendingViewerIds {
             castWebRTC.addViewer(viewerId: viewerId)
@@ -4972,7 +5166,12 @@ final class CompanionViewModel: ObservableObject {
 
                 try await startContinuousGlassesStreamForCast()
                 isLiveCasting = true
-                wearablesStatus = "Glasses camera active — streaming…"
+                let audioRoute = CastAudioManager.shared.isPermissionConfirmed
+                    ? CastAudioManager.shared.activeRouteDescription()
+                    : ""
+                wearablesStatus = audioRoute.isEmpty
+                    ? "Glasses camera active — streaming…"
+                    : "Glasses camera active — audio via \(audioRoute)"
 
                 beginDesktopStreamIfReady()
 
@@ -5004,6 +5203,8 @@ final class CompanionViewModel: ObservableObject {
         castTask?.cancel()
         castTask = nil
         castPreviewImage = nil
+        castWebRTC.setAudioEnabled(false)
+        CastAudioManager.shared.teardown()
         Task { await stopCameraStreamOnly() }
         castWebRTC.stopStream()
         relaySignaling?.status = relaySignaling?.connected == true

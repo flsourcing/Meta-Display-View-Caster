@@ -60,7 +60,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Needed to stream and capture POV frames from supported Meta glasses.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Bypass uses the iPhone microphone to dictate feedback notes for Meta Display.</string>
+	<string>Needed to stream live audio from Meta glasses during View Caster live casts.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Bypass transcribes your spoken feedback notes and sends them to Meta Display.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

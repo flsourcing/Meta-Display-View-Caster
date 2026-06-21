@@ -131,7 +131,7 @@ struct CastHomeView: View {
             }
             .buttonStyle(SecondaryButtonStyle())
 
-            Text("1. Tap Prepare Glasses\n2. Keep View Caster open on phone\n3. Enter code on glasses\n4. Guests: open viewer URL → password Wedding → enter name\n5. Live Stream starts camera → viewers see it live\n6. Tap Stop Live Cast when done")
+            Text("1. Tap Prepare Glasses\n2. Keep View Caster open on phone\n3. Enter code on glasses\n4. Guests: open viewer URL → password Wedding → enter name\n5. Live Stream starts camera + mic → viewers see and hear it live\n6. Tap Stop Live Cast when done")
                 .font(.footnote)
                 .foregroundStyle(.white.opacity(0.65))
         }

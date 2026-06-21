@@ -205,8 +205,13 @@
   function onStreamActive(stream) {
     els.remoteVideo.srcObject = stream;
     els.videoPlaceholder.classList.add('hidden');
+    const hasAudio = stream.getAudioTracks().length > 0;
+    if (hasAudio) {
+      els.captureHint.textContent = 'Live stream includes audio — tap Tap for sound if needed.';
+    } else {
+      els.captureHint.textContent = '';
+    }
     setViewerStatus('connected', `Live stream active — ${viewerName}`);
-    if (els.captureHint) els.captureHint.textContent = '';
     scrollToVideo();
   }
 
