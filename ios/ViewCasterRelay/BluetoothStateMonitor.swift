@@ -2,7 +2,6 @@ import CoreBluetooth
 import Foundation
 
 /// Matches Bypass Market Checker — waits for Bluetooth before Meta camera permission.
-@MainActor
 final class BluetoothStateMonitor: NSObject, CBCentralManagerDelegate {
     private let central: CBCentralManager
 

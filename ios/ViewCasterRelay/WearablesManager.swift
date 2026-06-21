@@ -207,9 +207,9 @@ final class WearablesManager: ObservableObject {
         let monitor = bluetoothMonitorInstance()
         if !monitor.isPoweredOn {
             wearablesStatus = "Waiting for Bluetooth..."
-            let ready = await monitor.waitUntilPoweredOn(timeoutSeconds: 2)
+            let ready = await waitForBluetooth(timeoutSeconds: 2)
             guard ready else {
-                wearablesStatus = "Bluetooth is \(monitor.stateDescription). Turn Bluetooth on, then retry Allow Camera."
+                wearablesStatus = "Bluetooth is \(bluetoothMonitorInstance().stateDescription). Turn Bluetooth on, then retry Allow Camera."
                 return
             }
         }
@@ -462,6 +462,16 @@ final class WearablesManager: ObservableObject {
         return monitor
     }
 
+    private func waitForBluetooth(timeoutSeconds: TimeInterval) async -> Bool {
+        if bluetoothMonitorInstance().isPoweredOn { return true }
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if bluetoothMonitorInstance().isPoweredOn { return true }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+        return bluetoothMonitorInstance().isPoweredOn
+    }
+
     private func autoSelector() -> AutoDeviceSelector {
         if let autoDeviceSelector { return autoDeviceSelector }
         let selector = AutoDeviceSelector(wearables: sdk)
@@ -515,7 +525,7 @@ final class WearablesManager: ObservableObject {
 
         let monitor = bluetoothMonitorInstance()
         if !monitor.isPoweredOn {
-            _ = await monitor.waitUntilPoweredOn(timeoutSeconds: 5)
+            _ = await waitForBluetooth(timeoutSeconds: 5)
         }
 
         let deadline = Date().addingTimeInterval(timeoutSeconds)
@@ -579,9 +589,8 @@ final class WearablesManager: ObservableObject {
     }
 
     private func startGlassesStreamAttempt(quiet: Bool, photoCaptureOnly: Bool) async throws {
-        let monitor = bluetoothMonitorInstance()
-        if !monitor.isPoweredOn {
-            guard await monitor.waitUntilPoweredOn(timeoutSeconds: 3) else {
+        if !bluetoothMonitorInstance().isPoweredOn {
+            guard await waitForBluetooth(timeoutSeconds: 3) else {
                 throw WearablesStreamError.noEligibleDevice
             }
         }
