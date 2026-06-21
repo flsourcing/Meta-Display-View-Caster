@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Meta Display View Caster</title>
-  <link rel="stylesheet" href="css/style.css?v=31">
+  <link rel="stylesheet" href="css/style.css?v=33">
 </head>
 <body>
   <div class="container">
@@ -17,7 +17,7 @@
     <section id="password-section">
       <div class="card">
         <label for="password-input">Viewer password</label>
-        <input id="password-input" type="password" autocomplete="off" placeholder="Password">
+        <input id="password-input" class="viewer-input" type="password" autocomplete="off" placeholder="Enter password" spellcheck="false">
         <button id="password-btn" class="btn btn-primary" type="button">Continue</button>
         <p id="password-error" class="message" role="alert"></p>
       </div>
@@ -32,7 +32,7 @@
     <section id="username-section" class="hidden">
       <div class="card">
         <label for="username-input">Your name</label>
-        <input id="username-input" type="text" autocomplete="name" maxlength="32" placeholder="How should we show your name?">
+        <input id="username-input" class="viewer-input" type="text" autocomplete="name" maxlength="32" placeholder="Your name">
         <button id="join-btn" class="btn btn-primary" type="button">Join live stream</button>
         <p id="username-error" class="message" role="alert"></p>
       </div>
@@ -45,17 +45,22 @@
     </section>
 
     <section id="viewer-section" class="hidden">
-      <div class="card">
+      <div class="card viewer-video-card">
+        <h2 class="viewer-video-title">Live stream</h2>
+        <div id="video-wrap" class="video-wrap viewer-video">
+          <video id="remote-video" autoplay playsinline muted></video>
+          <div id="video-placeholder" class="video-placeholder">Waiting for Live Stream from glasses…</div>
+        </div>
+        <div class="video-toolbar">
+          <button id="unmute-btn" class="btn btn-secondary" type="button">Tap for sound</button>
+          <button id="fullscreen-btn" class="btn btn-secondary" type="button">Fullscreen</button>
+        </div>
+        <p class="video-mobile-hint">Scroll down on your phone to watch here. Tap Fullscreen to enlarge.</p>
         <div id="status-viewer" class="status connected">
           <span class="status-dot"></span>
           <span>Waiting for live stream…</span>
         </div>
-        <div class="video-wrap">
-          <video id="remote-video" autoplay playsinline muted></video>
-          <div id="video-placeholder" class="video-placeholder">Waiting for Live Stream from glasses…</div>
-        </div>
-        <button id="unmute-btn" class="btn btn-secondary" type="button" style="margin-top:1rem;width:100%;">Tap for sound</button>
-        <p id="capture-hint" class="message" style="margin-top:1rem;"></p>
+        <p id="capture-hint" class="message"></p>
       </div>
 
       <div class="card" style="margin-top:1rem;">
@@ -68,14 +73,14 @@
   <footer>
     <strong>Casting:</strong> <a href="glasses.html">glasses</a> ·
     <a href="install.html">install app</a> ·
-    Password: <strong>Wedding</strong>
+    Ask the host for the viewer password
   </footer>
 
-  <script src="js/ws-signaling.js?v=31"></script>
-  <script src="js/webrtc-viewer.js?v=31"></script>
-  <script src="js/peerjs.min.js?v=31"></script>
-  <script src="config.js?v=31"></script>
-  <script src="js/signaling.js?v=31"></script>
-  <script src="js/desktop.js?v=32"></script>
+  <script src="js/ws-signaling.js?v=33"></script>
+  <script src="js/webrtc-viewer.js?v=33"></script>
+  <script src="js/peerjs.min.js?v=33"></script>
+  <script src="config.js?v=33"></script>
+  <script src="js/signaling.js?v=33"></script>
+  <script src="js/desktop.js?v=33"></script>
 </body>
 </html>

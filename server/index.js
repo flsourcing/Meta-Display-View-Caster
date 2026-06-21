@@ -9,6 +9,10 @@ const CODE_ROTATION_MS = 300_000;
 const RELAY_GRACE_MS = 900_000;
 const VIEWER_PASSWORD = process.env.VIEWER_PASSWORD || 'Wedding';
 
+function passwordsMatch(input, expected) {
+  return String(input || '').trim().toLowerCase() === String(expected || '').trim().toLowerCase();
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -242,7 +246,7 @@ wss.on('connection', (ws) => {
 
       case 'verify-viewer-password': {
         const password = String(msg.password || '').trim();
-        if (password !== VIEWER_PASSWORD) {
+        if (!passwordsMatch(password, VIEWER_PASSWORD)) {
           send(ws, { type: 'error', message: 'Wrong password.' });
           return;
         }
@@ -258,7 +262,7 @@ wss.on('connection', (ws) => {
       case 'join-viewer': {
         role = 'viewer';
         const password = String(msg.password || '').trim();
-        if (password !== VIEWER_PASSWORD) {
+        if (!passwordsMatch(password, VIEWER_PASSWORD)) {
           send(ws, { type: 'error', message: 'Wrong password.' });
           return;
         }

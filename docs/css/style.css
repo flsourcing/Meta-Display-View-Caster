@@ -21,7 +21,7 @@
 }
 
 html, body {
-  height: 100%;
+  min-height: 100%;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -32,6 +32,18 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+body.viewer-active {
+  min-height: 100%;
+}
+
+body.viewer-active .container {
+  flex: none;
+  max-width: 960px;
+  padding-bottom: 2.5rem;
 }
 
 a {
@@ -99,6 +111,35 @@ input[type="text"] {
 
 input[type="text"]:focus {
   border-color: var(--accent);
+}
+
+.viewer-input,
+input[type="text"].viewer-input,
+input[type="password"].viewer-input {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  font-size: 1.05rem;
+  font-family: var(--font);
+  letter-spacing: normal;
+  text-align: left;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.viewer-input::placeholder {
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+.viewer-input:focus,
+input[type="text"].viewer-input:focus,
+input[type="password"].viewer-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 100, 224, 0.18);
 }
 
 .btn {
@@ -201,7 +242,50 @@ input[type="text"]:focus {
   border-radius: 12px;
   overflow: hidden;
   aspect-ratio: 16 / 9;
+  margin-top: 0.75rem;
+}
+
+.viewer-video-card {
+  scroll-margin-top: 1rem;
+}
+
+.viewer-video-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.viewer-video {
+  margin-top: 0.5rem;
+}
+
+.video-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.video-toolbar .btn {
+  flex: 1;
+  width: auto;
+  margin-top: 0;
+}
+
+.video-mobile-hint {
+  display: none;
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-align: center;
+  margin-top: 0.65rem;
+  line-height: 1.4;
+}
+
+#viewer-section .status {
   margin-top: 1rem;
+}
+
+#viewer-section .message {
+  margin-top: 0.75rem;
 }
 
 .video-wrap video {
@@ -370,6 +454,36 @@ body.glasses .glasses-stream-btn:focus {
 @media (max-width: 480px) {
   input[type="text"] {
     font-size: 1.25rem;
+  }
+
+  header h1 {
+    font-size: 1.25rem;
+  }
+
+  .container {
+    padding: 1rem;
+  }
+
+  .viewer-video {
+    min-height: min(62vh, 520px);
+    aspect-ratio: auto;
+    border-radius: 10px;
+  }
+
+  .viewer-video video {
+    min-height: min(62vh, 520px);
+    width: 100%;
+    height: auto;
+    max-height: 70vh;
+    object-fit: contain;
+  }
+
+  .video-mobile-hint {
+    display: block;
+  }
+
+  .viewer-video-card {
+    scroll-margin-top: 0.5rem;
   }
 }
 

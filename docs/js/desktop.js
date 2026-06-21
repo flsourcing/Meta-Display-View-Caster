@@ -19,10 +19,12 @@
     status: document.getElementById('status'),
     statusText: document.getElementById('status-text'),
     remoteVideo: document.getElementById('remote-video'),
+    videoWrap: document.getElementById('video-wrap'),
     videoPlaceholder: document.getElementById('video-placeholder'),
     statusViewer: document.getElementById('status-viewer'),
     captureHint: document.getElementById('capture-hint'),
     unmuteBtn: document.getElementById('unmute-btn'),
+    fullscreenBtn: document.getElementById('fullscreen-btn'),
     viewerRoster: document.getElementById('viewer-roster'),
   };
 
@@ -36,10 +38,14 @@
   let joinBusy = false;
 
   const params = new URLSearchParams(location.search);
-  const urlPassword = params.get('password') || params.get('p') || defaultPassword;
+  const urlPassword = params.get('password') || params.get('p') || '';
   const urlName = params.get('name') || params.get('username') || '';
-  if (els.passwordInput) els.passwordInput.value = urlPassword;
+  if (els.passwordInput && urlPassword) els.passwordInput.value = urlPassword;
   if (els.usernameInput && urlName) els.usernameInput.value = urlName.slice(0, 32);
+
+  function passwordsMatch(a, b) {
+    return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  }
 
   function setStatus(kind, text) {
     els.status.className = `status ${kind}`;
@@ -87,6 +93,34 @@
     }
   }
 
+  function scrollToVideo() {
+    requestAnimationFrame(() => {
+      els.videoWrap?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  function enterFullscreen() {
+    const video = els.remoteVideo;
+    if (!video) return;
+    if (video.webkitEnterFullscreen) {
+      video.webkitEnterFullscreen();
+      return;
+    }
+    const target = els.videoWrap || video;
+    if (target.requestFullscreen) {
+      target.requestFullscreen().catch(() => {});
+    } else if (video.requestFullscreen) {
+      video.requestFullscreen().catch(() => {});
+    }
+  }
+
+  function onStreamActive(stream) {
+    els.remoteVideo.srcObject = stream;
+    els.videoPlaceholder.classList.add('hidden');
+    setViewerStatus('connected', `Live stream active — ${viewerName}`);
+    scrollToVideo();
+  }
+
   function showUsernameStep() {
     els.passwordSection.classList.add('hidden');
     els.usernameSection.classList.remove('hidden');
@@ -102,8 +136,10 @@
     els.passwordSection.classList.add('hidden');
     els.usernameSection.classList.add('hidden');
     els.viewerSection.classList.remove('hidden');
+    document.body.classList.add('viewer-active');
     setViewerStatus('waiting', `Hi ${viewerName} — waiting for live stream…`);
     els.captureHint.textContent = 'Stream appears automatically when Live Stream starts on glasses.';
+    scrollToVideo();
   }
 
   function cleanupCall() {
@@ -124,11 +160,7 @@
 
       if (msg.type === 'offer') {
         if (!pc) {
-          pc = CasterWebRTCViewer.createPeerConnection((stream) => {
-            els.remoteVideo.srcObject = stream;
-            els.videoPlaceholder.classList.add('hidden');
-            setViewerStatus('connected', `Live stream active — ${viewerName}`);
-          });
+          pc = CasterWebRTCViewer.createPeerConnection(onStreamActive);
           CasterWebRTCViewer.bindIce(pc, ws, viewerId);
         }
         await CasterWebRTCViewer.handleOffer(pc, ws, msg, viewerId);
@@ -140,10 +172,12 @@
 
       if (msg.type === 'stream-started') {
         setViewerStatus('waiting', 'Stream starting…');
+        scrollToVideo();
       }
 
       if (msg.type === 'stream-starting') {
         setViewerStatus('waiting', 'Glasses camera starting…');
+        scrollToVideo();
       }
 
       if (msg.type === 'stop-stream') {
@@ -156,6 +190,7 @@
         connected = false;
         ws?.close();
         ws = null;
+        document.body.classList.remove('viewer-active');
         els.viewerSection.classList.add('hidden');
         els.passwordSection.classList.remove('hidden');
         setStatus('waiting', 'Cast paused — try again when phone app reopens');
@@ -167,6 +202,7 @@
       if (connected) {
         connected = false;
         cleanupCall();
+        document.body.classList.remove('viewer-active');
         els.viewerSection.classList.add('hidden');
         els.usernameSection.classList.remove('hidden');
         showUsernameError('Connection lost — tap Join live stream to reconnect.');
@@ -176,13 +212,13 @@
 
   async function verifyPassword() {
     if (!useWS || passwordBusy) return;
-    const password = (els.passwordInput?.value || defaultPassword).trim();
+    const password = (els.passwordInput?.value || '').trim();
     if (!password) {
       showPasswordError('Enter the viewer password.');
       return;
     }
 
-    if (password !== defaultPassword) {
+    if (!passwordsMatch(password, defaultPassword)) {
       showPasswordError('Wrong password.');
       setStatus('error', 'Wrong password');
       return;
@@ -198,7 +234,6 @@
       await CasterWS.wakeServer?.().catch(() => {});
       const live = await CasterWS.fetchLiveStatus().catch(() => ({ relayOnline: false, streaming: false }));
       verifiedPassword = password;
-      try { sessionStorage.setItem('mdvc-viewer-password', password); } catch { /* ignore */ }
       showPasswordError('');
       if (!live.relayOnline) {
         setStatus('waiting', 'Password OK — waiting for cast on phone');
@@ -226,7 +261,7 @@
       showUsernameError('Enter your name so others can see who is watching.');
       return;
     }
-    const password = verifiedPassword || (els.passwordInput?.value || defaultPassword).trim();
+    const password = verifiedPassword || (els.passwordInput?.value || '').trim();
     if (!password) {
       showUsernameError('Verify password first.');
       return;
@@ -250,9 +285,14 @@
       showViewerStep();
       if (joined.streaming) {
         setViewerStatus('waiting', 'Stream in progress — connecting video…');
+        scrollToVideo();
       }
     } catch (err) {
-      showUsernameError(err.message || 'Could not join.');
+      let msg = err.message || 'Could not join.';
+      if (msg.includes('Unknown: join-viewer')) {
+        msg = 'Signaling server needs an update. Redeploy server/ on Render, then try again.';
+      }
+      showUsernameError(msg);
     } finally {
       joinBusy = false;
       els.joinBtn.disabled = false;
@@ -274,6 +314,11 @@
     els.remoteVideo.muted = false;
     els.unmuteBtn.textContent = 'Sound on';
     els.unmuteBtn.disabled = true;
+  });
+
+  els.fullscreenBtn?.addEventListener('click', enterFullscreen);
+  els.remoteVideo?.addEventListener('click', () => {
+    if (els.remoteVideo.srcObject) enterFullscreen();
   });
 
   try {
