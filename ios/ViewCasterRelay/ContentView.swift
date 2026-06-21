@@ -141,11 +141,8 @@ final class RelayViewModel: ObservableObject {
     func onReturnFromBackground() {
         endBackgroundTask()
         refreshMetaInstallState()
-        wearables.unlockCameraStepIfNeeded()
         Task {
-            await wearables.refreshAfterForeground()
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            await wearables.refreshAfterForeground()
+            await wearables.onAppBecameActive()
         }
         if !signaling.connected {
             start()
