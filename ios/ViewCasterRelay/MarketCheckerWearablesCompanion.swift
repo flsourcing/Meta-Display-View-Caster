@@ -251,6 +251,17 @@ final class MarketCheckerWearablesCompanion: ObservableObject {
     func startRegistration() {
         Task {
             guard validateDATConfiguration() else { return }
+            if let installIssue = SigningInfo.metaConnectionIssue {
+                wearablesStatus = installIssue
+                showError(installIssue)
+                return
+            }
+            if Wearables.shared.registrationState == .unavailable {
+                let issue = registrationUnavailableExplanation()
+                wearablesStatus = issue
+                showError(issue)
+                return
+            }
             if isRegistrationStateReady(Wearables.shared.registrationState) {
                 wearablesStatus = "Already registered with Meta AI."
                 showMessage("Already Registered")
@@ -1043,7 +1054,7 @@ final class MarketCheckerWearablesCompanion: ObservableObject {
         }
 
         if currentState == .unavailable {
-            showError("Registration is unavailable. Confirm Meta AI is installed and Developer Mode is enabled.")
+            showError(registrationUnavailableExplanation())
             return false
         }
 
@@ -1121,7 +1132,7 @@ final class MarketCheckerWearablesCompanion: ObservableObject {
         case .available:
             wearablesStatus = "Register the app, allow camera, then capture from the glasses."
         case .unavailable:
-            wearablesStatus = "Registration unavailable. Check Meta AI and Developer Mode."
+            wearablesStatus = registrationUnavailableExplanation()
         @unknown default:
             break
         }
@@ -1149,6 +1160,17 @@ final class MarketCheckerWearablesCompanion: ObservableObject {
 
         let text = error.localizedDescription.lowercased()
         return text.contains("registrationerror")
+    }
+
+    private func registrationUnavailableExplanation() -> String {
+        if let issue = SigningInfo.metaConnectionIssue {
+            return issue
+        }
+        return """
+        Registration unavailable (SDK rejected app identity — not a Developer Mode issue).
+        Tap Run Meta diagnostics and confirm Bundle(runtime) is com.flsourcing.bypassmarketchecker.
+        If Sideloadly changed the bundle ID, delete the app and reinstall with Custom Bundle ID empty.
+        """
     }
 
     private func isRegistrationStateReady(_ state: RegistrationState) -> Bool {
@@ -1415,6 +1437,11 @@ final class MarketCheckerWearablesCompanion: ObservableObject {
         startRegistrationMonitoring()
         installCompanionLifecycleObserversIfNeeded()
         startCompanionBackgroundBridgeIfNeeded()
+        if let installIssue = SigningInfo.metaConnectionIssue {
+            wearablesStatus = installIssue
+        } else if Wearables.shared.registrationState == .unavailable {
+            wearablesStatus = registrationUnavailableExplanation()
+        }
         await validateCameraPermissionFlag()
         _ = await resolveCameraPermissionIfAlreadyGranted(shouldShowMessage: false)
         refreshSetupProgress()

@@ -1,8 +1,15 @@
 import Foundation
 
 enum SigningInfo {
+    /// Must match Meta Wearables portal + Bypass Market Checker registration.
+    static let expectedBundleIdentifier = "com.flsourcing.bypassmarketchecker"
+
     static var bundleIdentifier: String {
         Bundle.main.bundleIdentifier ?? "unknown"
+    }
+
+    static var bundleIDMismatch: Bool {
+        bundleIdentifier != expectedBundleIdentifier
     }
 
     /// Team ID from the sideload signature (embedded.mobileprovision).
@@ -51,8 +58,16 @@ enum SigningInfo {
         return pl["MWDAT"] as? [String: Any]
     }
 
-    /// Why Meta AI opens but never shows a connect prompt.
+    /// Why registration stays `.unavailable` or Meta AI never prompts.
     static var metaConnectionIssue: String? {
+        if bundleIDMismatch {
+            return """
+            Wrong bundle ID — Meta SDK rejected this install (registration stays unavailable).
+            Expected: \(expectedBundleIdentifier)
+            This phone: \(bundleIdentifier)
+            In Sideloadly, leave Custom Bundle ID empty, delete this app, and reinstall ios-65 fresh.
+            """
+        }
         guard let configured = configuredMWTeamID, !configured.isEmpty else {
             return "Missing MWDAT TeamID in this install. Reinstall a GitHub release tagged with your Team ID."
         }
@@ -61,7 +76,7 @@ enum SigningInfo {
         }
         if configured.uppercased() != signed.uppercased() {
             return """
-            Team ID mismatch — Meta AI won't prompt.
+            Team ID mismatch — Meta SDK rejects registration.
             IPA Team ID: \(configured)
             Sideload Team ID: \(signed)
             Rebuild the IPA with Team ID \(signed) (GitHub Actions → Build iOS IPA).
@@ -74,6 +89,10 @@ enum SigningInfo {
         guard let configured = configuredMWTeamID, !configured.isEmpty else { return true }
         guard let signed = embeddedTeamIdentifier else { return false }
         return configured.uppercased() != signed.uppercased()
+    }
+
+    static var needsMetaFix: Bool {
+        bundleIDMismatch || needsTeamIDPatch
     }
 
     static var displayTeamID: String? {

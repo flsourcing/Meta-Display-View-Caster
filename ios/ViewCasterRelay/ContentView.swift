@@ -12,7 +12,7 @@ final class RelayViewModel: ObservableObject {
     @Published var metaHint = ""
     @Published private(set) var wearables = MarketCheckerWearablesCompanion()
     @Published var sideloadTeamId = SigningInfo.displayTeamID ?? ""
-    @Published var metaBlocked = SigningInfo.needsTeamIDPatch
+    @Published var metaBlocked = SigningInfo.needsMetaFix
 
     private lazy var webrtc = WebRTCManager()
     private let phoneCamera = PhoneCameraManager()
@@ -116,7 +116,7 @@ final class RelayViewModel: ObservableObject {
 
     func refreshMetaInstallState() {
         sideloadTeamId = SigningInfo.displayTeamID ?? sideloadTeamId
-        metaBlocked = SigningInfo.needsTeamIDPatch
+        metaBlocked = SigningInfo.needsMetaFix
     }
 
     func onReturnFromBackground() {
@@ -242,13 +242,17 @@ struct ContentView: View {
 
                     if model.metaBlocked {
                         VStack(spacing: 10) {
-                            Text("Meta AI can't connect to this install")
+                            Text("Meta SDK rejected this install")
                                 .font(.subheadline.bold())
                                 .foregroundStyle(.orange)
                             Text(SigningInfo.patchInstructions)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
+                            Text("Bundle (this phone): \(SigningInfo.bundleIdentifier)")
+                                .font(.caption.monospaced())
+                            Text("Bundle (required): \(SigningInfo.expectedBundleIdentifier)")
+                                .font(.caption.monospaced())
                             if let configured = SigningInfo.configuredMWTeamID {
                                 Text("IPA Team ID: \(configured)")
                                     .font(.caption.monospaced())
