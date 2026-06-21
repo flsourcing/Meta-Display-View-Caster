@@ -34,14 +34,10 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 22) {
                         header
 
-                        if viewModel.isLoggedIn {
-                            if viewModel.isMobileSetupComplete {
-                                HomeMenuView(viewModel: viewModel)
-                            } else {
-                                setupWizard
-                            }
+                        if viewModel.isMobileSetupComplete {
+                            HomeMenuView(viewModel: viewModel)
                         } else {
-                            loginForm
+                            setupWizard
                         }
 
                         if let message = viewModel.message {
@@ -52,10 +48,10 @@ struct ContentView: View {
                         }
                     }
                     .padding(24)
-                    .padding(.top, viewModel.isLoggedIn && viewModel.isMobileSetupComplete ? 28 : 0)
+                    .padding(.top, viewModel.isMobileSetupComplete ? 28 : 0)
                 }
 
-                if viewModel.isLoggedIn && viewModel.isMobileSetupComplete {
+                if viewModel.isMobileSetupComplete {
                     Button {
                         viewModel.showSettings = true
                     } label: {
@@ -70,7 +66,7 @@ struct ContentView: View {
                 }
             }
             .overlay(alignment: .topTrailing) {
-                if viewModel.isLoggedIn && viewModel.isMobileSetupComplete {
+                if viewModel.isMobileSetupComplete {
                     Button {
                         viewModel.showConnectionPopover.toggle()
                     } label: {
@@ -171,37 +167,8 @@ struct ContentView: View {
         }
     }
 
-    private var loginForm: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Log In")
-                .font(.title2.bold())
-                .foregroundStyle(.white)
-
-            TextField("Email", text: $viewModel.email)
-                .textInputAutocapitalization(.never)
-                .keyboardType(.emailAddress)
-                .autocorrectionDisabled()
-                .fieldStyle()
-
-            SecureField("Password", text: $viewModel.password)
-                .fieldStyle()
-
-            Button {
-                Task { await viewModel.login() }
-            } label: {
-                Label("Log In", systemImage: "person.crop.circle.badge.checkmark")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(PrimaryButtonStyle(isEnabled: !viewModel.isBusy))
-            .disabled(viewModel.isBusy)
-        }
-        .cardStyle()
-    }
-
     private var setupWizard: some View {
         VStack(alignment: .leading, spacing: 18) {
-            loggedInHeader
-
             Divider()
                 .overlay(.white.opacity(0.18))
 
@@ -220,27 +187,6 @@ struct ContentView: View {
             }
         }
         .cardStyle()
-    }
-
-    private var loggedInHeader: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Logged In")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                Text(viewModel.currentEmail)
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.65))
-            }
-
-            Spacer()
-
-            Button("Log Out") {
-                viewModel.logout()
-            }
-            .font(.footnote.weight(.bold))
-            .foregroundStyle(.red.opacity(0.9))
-        }
     }
 
     private var setupRegistrationStep: some View {
@@ -425,8 +371,6 @@ struct HomeMenuView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            loggedInHeader(viewModel: viewModel)
-
             Divider().overlay(.white.opacity(0.18))
 
             homeActionButton(title: "Image Lookup", icon: "camera.viewfinder") {
@@ -459,24 +403,6 @@ struct HomeMenuView: View {
         }
         .buttonStyle(SecondaryButtonStyle())
         .disabled(viewModel.isBusy)
-    }
-
-    @ViewBuilder
-    private func loggedInHeader(viewModel: CompanionViewModel) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Logged In")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                Text(viewModel.currentEmail)
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.65))
-            }
-            Spacer()
-            Button("Log Out") { viewModel.logout() }
-                .font(.footnote.weight(.bold))
-                .foregroundStyle(.red.opacity(0.9))
-        }
     }
 }
 
@@ -2474,6 +2400,9 @@ final class CompanionViewModel: ObservableObject {
     func restoreSession() async {
         startRegistrationMonitoring()
         loadMobileSetupState()
+        await validateCameraPermissionFlag()
+        _ = await resolveCameraPermissionIfAlreadyGranted(shouldShowMessage: false)
+        refreshSetupProgress()
 
         guard let savedToken = UserDefaults.standard.string(forKey: tokenKey) else {
             return
@@ -2484,9 +2413,6 @@ final class CompanionViewModel: ObservableObject {
         await refreshActiveLookup()
         captureLookupBaselineIfNeeded()
         startCompanionBackgroundBridgeIfNeeded()
-        await validateCameraPermissionFlag()
-        await refreshCameraPermissionStatus(shouldShowMessage: false)
-        refreshSetupProgress()
         syncLookupHistory()
         await refreshApiKeys()
         await refreshIntegrations()
