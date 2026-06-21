@@ -182,30 +182,36 @@
       return;
     }
 
+    if (password !== defaultPassword) {
+      showPasswordError('Wrong password.');
+      setStatus('error', 'Wrong password');
+      return;
+    }
+
     passwordBusy = true;
     els.passwordBtn.disabled = true;
     els.passwordBtn.textContent = 'Checking…';
     showPasswordError('');
-    setStatus('waiting', 'Checking password…');
+    setStatus('waiting', 'Checking cast status…');
 
     try {
       await CasterWS.wakeServer?.().catch(() => {});
-      const result = await CasterWS.verifyViewerPassword(password);
+      const live = await CasterWS.fetchLiveStatus().catch(() => ({ relayOnline: false, streaming: false }));
       verifiedPassword = password;
       try { sessionStorage.setItem('mdvc-viewer-password', password); } catch { /* ignore */ }
       showPasswordError('');
-      if (!result.relayOnline) {
+      if (!live.relayOnline) {
         setStatus('waiting', 'Password OK — waiting for cast on phone');
         if (els.usernameStatusText) {
           els.usernameStatusText.textContent = 'Password accepted. You can join now — stream will start when Live Stream begins on glasses.';
         }
       } else {
-        setStatus('connected', 'Password accepted');
+        setStatus('connected', live.streaming ? 'Password accepted — stream is live' : 'Password accepted');
       }
       showUsernameStep();
     } catch (err) {
-      showPasswordError(err.message || 'Wrong password.');
-      setStatus('error', 'Could not verify password');
+      showPasswordError(err.message || 'Could not reach signaling server.');
+      setStatus('error', 'Could not reach server');
     } finally {
       passwordBusy = false;
       els.passwordBtn.disabled = false;
