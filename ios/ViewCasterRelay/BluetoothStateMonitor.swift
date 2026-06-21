@@ -16,7 +16,7 @@ final class BluetoothStateMonitor: NSObject, CBCentralManagerDelegate {
         central.delegate = self
     }
 
-    func centralManagerDidUpdateState(_ central: CBCentralManager) {}
+    nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {}
 
     var isPoweredOn: Bool {
         central.state == .poweredOn
