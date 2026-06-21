@@ -284,7 +284,13 @@ wss.on('connection', (ws) => {
         ws.castSessionId = sessionId;
         ws.castRole = role;
 
-        send(ws, { type: 'relay-registered', role: 'relay', sessionId, ...sessionPayload(session) });
+        send(ws, {
+          type: 'relay-registered',
+          role: 'relay',
+          sessionId,
+          chatHistory: (session.chatHistory || []).slice(-50),
+          ...sessionPayload(session),
+        });
         if (session.glassesWs) {
           send(session.glassesWs, { type: 'relay-online', ...sessionPayload(session) });
         }
@@ -446,6 +452,19 @@ wss.on('connection', (ws) => {
         }
         session.chatHistory = [];
         broadcast(session, { type: 'chat-cleared' });
+        break;
+      }
+
+      case 'delete-chat-message': {
+        const session = getSession(sessionId);
+        if (!session || role !== 'relay') {
+          send(ws, { type: 'error', message: 'Only the caster can delete chat messages.' });
+          return;
+        }
+        const messageId = String(msg.messageId || msg.id || '').trim();
+        if (!messageId) return;
+        session.chatHistory = (session.chatHistory || []).filter((entry) => entry.id !== messageId);
+        broadcast(session, { type: 'chat-message-deleted', id: messageId });
         break;
       }
 

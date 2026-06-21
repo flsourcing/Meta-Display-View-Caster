@@ -14,6 +14,22 @@ struct ViewerPresence: Identifiable, Equatable {
     }
 }
 
+struct CastChatMessage: Identifiable, Equatable {
+    let id: String
+    let viewerId: String
+    let name: String
+    let text: String
+    let kind: String
+    let gifUrl: String?
+
+    var isGif: Bool { kind == "gif" }
+
+    var previewText: String {
+        if isGif { return "Sent a GIF" }
+        return text
+    }
+}
+
 @MainActor
 final class SignalingClient: ObservableObject {
     @Published var code = "------"
@@ -23,6 +39,7 @@ final class SignalingClient: ObservableObject {
     @Published var glassesLinked = false
     @Published var viewerCount = 0
     @Published var viewerRoster: [ViewerPresence] = []
+    @Published var chatMessages: [CastChatMessage] = []
 
     private var ws: URLSessionWebSocketTask?
     private var session: URLSession?
@@ -71,6 +88,7 @@ final class SignalingClient: ObservableObject {
         glassesLinked = false
         viewerCount = 0
         viewerRoster = []
+        chatMessages = []
         status = "Offline"
     }
 
@@ -98,6 +116,12 @@ final class SignalingClient: ObservableObject {
 
     func clearLiveChat() {
         sendSignal(type: "clear-chat")
+        chatMessages = []
+    }
+
+    func deleteChatMessage(id: String) {
+        sendSignal(type: "delete-chat-message", payload: ["messageId": id])
+        chatMessages.removeAll { $0.id == id }
     }
 
     func sendOffer(_ sdp: String, viewerId: String) {
@@ -233,6 +257,36 @@ final class SignalingClient: ObservableObject {
         }
     }
 
+    private func parseChatMessage(_ json: [String: Any]) -> CastChatMessage? {
+        guard let id = json["id"] as? String else { return nil }
+        let viewerId = json["viewerId"] as? String ?? ""
+        let name = json["name"] as? String ?? "Guest"
+        let kind = json["kind"] as? String ?? "text"
+        let text = json["text"] as? String ?? ""
+        let gifUrl = json["gifUrl"] as? String
+        return CastChatMessage(
+            id: id,
+            viewerId: viewerId,
+            name: name,
+            text: text,
+            kind: kind,
+            gifUrl: gifUrl
+        )
+    }
+
+    private func applyChatHistory(_ raw: [[String: Any]]) {
+        chatMessages = raw.compactMap { parseChatMessage($0) }
+    }
+
+    private func appendChatMessage(_ json: [String: Any]) {
+        guard let message = parseChatMessage(json) else { return }
+        if chatMessages.contains(where: { $0.id == message.id }) { return }
+        chatMessages.append(message)
+        if chatMessages.count > 100 {
+            chatMessages.removeFirst(chatMessages.count - 100)
+        }
+    }
+
     private func applyViewerList(_ json: [String: Any]) {
         guard let raw = json["viewers"] as? [[String: Any]] else { return }
         viewerRoster = raw.compactMap { item in
@@ -271,6 +325,9 @@ final class SignalingClient: ObservableObject {
         case "relay-registered", "code-rotated":
             if let c = json["code"] as? String { code = c }
             if let sid = json["sessionId"] as? String { savedSessionId = sid }
+            if let history = json["chatHistory"] as? [[String: Any]] {
+                applyChatHistory(history)
+            }
             connected = true
             status = "Enter this code on desktop & glasses"
             registerTask?.cancel()
@@ -314,6 +371,14 @@ final class SignalingClient: ObservableObject {
         case "viewer-needs-offer":
             if let vid = json["viewerId"] as? String {
                 onViewerNeedsOffer?(vid)
+            }
+        case "chat-message":
+            appendChatMessage(json)
+        case "chat-cleared":
+            chatMessages = []
+        case "chat-message-deleted":
+            if let id = json["id"] as? String {
+                chatMessages.removeAll { $0.id == id }
             }
         case "glasses-joined":
             glassesLinked = true

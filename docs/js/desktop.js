@@ -178,6 +178,7 @@
 
     const item = document.createElement('div');
     item.className = 'chat-message';
+    item.dataset.chatId = msg.id;
     if (msg.viewerId === viewerId) item.classList.add('is-self');
 
     const name = document.createElement('span');
@@ -438,6 +439,14 @@
 
       if (msg.type === 'chat-cleared') {
         loadChatHistory([]);
+      }
+
+      if (msg.type === 'chat-message-deleted') {
+        if (!msg.id || !els.chatMessages) return;
+        chatSeen.delete(msg.id);
+        const node = els.chatMessages.querySelector(`[data-chat-id="${msg.id}"]`);
+        node?.remove();
+        renderChatEmpty();
       }
 
       if (msg.type === 'relay-online') {

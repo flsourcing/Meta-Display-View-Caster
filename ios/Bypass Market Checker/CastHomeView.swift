@@ -43,41 +43,7 @@ struct CastHomeView: View {
                 )
             }
 
-            if !signaling.viewerRoster.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Viewers")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.85))
-                        Spacer()
-                        Button("Wipe Live Chat") {
-                            viewModel.wipeLiveChat()
-                        }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.orange)
-                    }
-
-                    ForEach(signaling.viewerRoster) { viewer in
-                        HStack {
-                            Text(viewer.name)
-                                .font(.subheadline)
-                                .foregroundStyle(.white.opacity(0.9))
-                            Spacer()
-                            Text(viewer.statusLabel)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(viewer.isWatching ? .green : .orange)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-                .padding(12)
-                .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-            } else {
-                Button("Wipe Live Chat") {
-                    viewModel.wipeLiveChat()
-                }
-                .buttonStyle(SecondaryButtonStyle())
-            }
+            viewersPanel
 
             Button {
                 Task { await viewModel.prepareGlassesForCast() }
@@ -109,6 +75,16 @@ struct CastHomeView: View {
                 .buttonStyle(PrimaryButtonStyle(isEnabled: !viewModel.isBusy && !viewModel.isStartingLiveCast))
                 .disabled(viewModel.isBusy || viewModel.isStartingLiveCast)
             }
+
+            Button {
+                viewModel.wipeLiveChat()
+            } label: {
+                Label("Wipe Live Chat", systemImage: "trash")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(SecondaryButtonStyle())
+
+            liveChatControlPanel
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Desktop")
@@ -152,6 +128,92 @@ struct CastHomeView: View {
         .onAppear {
             viewModel.startCastCompanionBridge()
         }
+    }
+
+    private var viewersPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Viewers")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.85))
+
+            if signaling.viewerRoster.isEmpty {
+                Text("No viewers yet")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .padding(.vertical, 4)
+            } else {
+                ForEach(signaling.viewerRoster) { viewer in
+                    HStack {
+                        Text(viewer.name)
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.9))
+                        Spacer()
+                        Text(viewer.statusLabel)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(viewer.isWatching ? .green : .orange)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+        .padding(12)
+        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var liveChatControlPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Live Chat Control")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.85))
+
+            Text("Remove individual guest messages from the live chat.")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.55))
+
+            if signaling.chatMessages.isEmpty {
+                Text("No chat messages yet")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.45))
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 8)
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(signaling.chatMessages) { message in
+                            HStack(alignment: .top, spacing: 10) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(message.name)
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.white.opacity(0.9))
+                                    Text(message.previewText)
+                                        .font(.caption)
+                                        .foregroundStyle(.white.opacity(0.7))
+                                        .lineLimit(2)
+                                }
+                                Spacer(minLength: 8)
+                                Button {
+                                    signaling.deleteChatMessage(id: message.id)
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.caption.weight(.semibold))
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.red.opacity(0.9))
+                                .accessibilityLabel("Delete message from \(message.name)")
+                            }
+                            .padding(.vertical, 8)
+
+                            if message.id != signaling.chatMessages.last?.id {
+                                Divider().overlay(Color.white.opacity(0.08))
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 200)
+            }
+        }
+        .padding(12)
+        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var castPreviewPanel: some View {
