@@ -42,12 +42,37 @@ final class BypassMetaCompanion: ObservableObject {
         cameraSetupStatus == .success ? "Connected" : "Disconnected"
     }
 
+    var registrationStateLabel: String {
+        let state = Wearables.shared.registrationState
+        return "\(state) — \(state.description)"
+    }
+
+    var needsCompleteRegistration: Bool {
+        let state = Wearables.shared.registrationState
+        return registrationSetupStatus != .success
+            && (state == .registering || state == .unavailable || registrationOpenedAt != nil)
+    }
+
     func bootstrap() async {
         startRegistrationMonitoring()
+        await waitForRegistrationStateToSettle()
         await validateCameraPermissionFlag()
         _ = await resolveCameraPermissionIfAlreadyGranted(shouldShowMessage: false)
         refreshSetupProgress()
         applyInitialRegistrationState()
+    }
+
+    /// SDK sometimes reports unavailable briefly after configure(); poll before showing errors.
+    private func waitForRegistrationStateToSettle() async {
+        let deadline = Date().addingTimeInterval(8)
+        while Date() < deadline {
+            let state = Wearables.shared.registrationState
+            if state == .available || state == .registered || state == .registering {
+                handleRegistrationStateChange(state)
+                return
+            }
+            try? await Task.sleep(nanoseconds: 400_000_000)
+        }
     }
 
     private func applyInitialRegistrationState() {
@@ -61,9 +86,9 @@ final class BypassMetaCompanion: ObservableObject {
     private func unavailableGuidance() -> String {
         if isDeveloperModeConfig {
             return """
-            Registration unavailable. Enable Developer Mode in Meta AI:
-            Settings → App Info → tap App version 7× → Developer Mode ON.
-            Also enable Developer Mode on your glasses in Meta AI.
+            SDK still unavailable (Dev Mode IPA). App Developer Mode looks ON — enable it on the glasses too:
+            Meta AI → Settings → Meta RB Display (your glasses) → Developer Mode ON.
+            If shown, tap Install DAT SDK. Force-quit Meta AI and View Caster, then tap Register below.
             """
         }
         return """
@@ -79,7 +104,10 @@ final class BypassMetaCompanion: ObservableObject {
     }
 
     func onAppWillEnterForeground() {
-        onAppBecameActive()
+        Task {
+            await waitForRegistrationStateToSettle()
+            onAppBecameActive()
+        }
     }
 
     func startRegistrationMonitoring() {
@@ -171,11 +199,17 @@ final class BypassMetaCompanion: ObservableObject {
             isBusy = true
             defer { isBusy = false }
 
-            wearablesStatus = "Opening Meta AI registration..."
+            let state = Wearables.shared.registrationState
+            if state == .unavailable {
+                wearablesStatus = "Trying registration anyway (SDK reported unavailable)..."
+            } else {
+                wearablesStatus = "Opening Meta AI registration..."
+            }
+
             do {
                 registrationOpenedAt = Date()
                 try await Wearables.shared.startRegistration()
-                wearablesStatus = "Opened Meta AI registration. Return here after approving."
+                wearablesStatus = "Opened Meta AI. Tap Connect, then return here and tap Finish in Meta AI."
             } catch RegistrationError.alreadyRegistered {
                 wearablesStatus = "Already registered with Meta AI."
                 showMessage("Already Registered")
@@ -186,6 +220,27 @@ final class BypassMetaCompanion: ObservableObject {
                     return
                 }
                 showWearablesError(context: "Registration", error: error)
+            }
+        }
+    }
+
+    func completeRegistrationInMetaAI() {
+        Task {
+            isBusy = true
+            defer { isBusy = false }
+
+            wearablesStatus = "Opening Meta AI — tap View Caster Relay to deliver callback..."
+            do {
+                try await Wearables.shared.openDATGlassesAppUpdate()
+            } catch {
+                NSLog("ViewCaster: openDATGlassesAppUpdate: \(error.localizedDescription)")
+                openMetaAIApp()
+            }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            _ = await waitForRegistrationReady(timeoutSeconds: 20)
+            refreshSetupProgress()
+            if !isRegistrationStateReady(Wearables.shared.registrationState) {
+                wearablesStatus = unavailableGuidance()
             }
         }
     }

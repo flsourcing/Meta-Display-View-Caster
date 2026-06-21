@@ -132,6 +132,19 @@ final class RelayViewModel: ObservableObject {
         }
     }
 
+    func handleMetaCallback(_ url: URL) {
+        Task {
+            do {
+                let handled = try await Wearables.shared.handleUrl(url)
+                if handled {
+                    NotificationCenter.default.post(name: .wearablesURLHandled, object: url)
+                }
+            } catch {
+                NSLog("Wearables handleUrl failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     func onEnterBackground() {
         beginBackgroundTask()
     }

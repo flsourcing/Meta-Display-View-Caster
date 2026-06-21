@@ -14,6 +14,10 @@ struct MetaSettingsView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.leading)
 
+            Text(meta.registrationStateLabel)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+
             if let message = meta.message {
                 Text(message)
                     .font(.footnote.weight(.semibold))
@@ -35,6 +39,18 @@ struct MetaSettingsView: View {
                 meta.startRegistration()
             }
 
+            if meta.needsCompleteRegistration {
+                Button {
+                    meta.completeRegistrationInMetaAI()
+                } label: {
+                    Label("Finish in Meta AI", systemImage: "arrow.uturn.backward.circle.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                .disabled(meta.isBusy)
+            }
+
             metaSettingsRow(
                 title: "Allow Camera",
                 icon: "camera.badge.ellipsis",
@@ -48,7 +64,7 @@ struct MetaSettingsView: View {
             }
             .font(.footnote)
 
-            Text("Complete registration in Meta AI, then return here. Dev Mode IPA (MetaAppID=0) required for sideload unless portal is configured.")
+            Text("After Connect in Meta AI, return here and tap Finish in Meta AI (sideload needs the viewcaster:// callback).")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
