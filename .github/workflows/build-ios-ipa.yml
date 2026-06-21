@@ -58,6 +58,11 @@ jobs:
             /usr/libexec/PlistBuddy -c "Set :MWDAT:ClientToken '$META_CLIENT_TOKEN'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :MWDAT:TeamID string '$TEAM'" "$PLIST" 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Set :MWDAT:TeamID '$TEAM'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :MWDAT:DAMEnabled bool true" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :MWDAT:DAMEnabled true" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :MWDAT:Analytics dict" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :MWDAT:Analytics:OptOut bool true" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :MWDAT:Analytics:OptOut true" "$PLIST"
           echo "MWDAT in built app:"
           /usr/libexec/PlistBuddy -c "Print :MWDAT" "$PLIST"
 

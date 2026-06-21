@@ -21,13 +21,7 @@ struct ViewCasterRelayApp: App {
         _model = StateObject(wrappedValue: vm)
 
         MetaAppDelegate.install { url in
-            Task { @MainActor in
-                await vm.wearables.handleIncomingURL(url)
-            }
-        }
-
-        Task { @MainActor in
-            vm.configureWearables(configError: configErr)
+            Task { await MetaWearablesURL.handle(url) }
         }
     }
 
@@ -36,9 +30,7 @@ struct ViewCasterRelayApp: App {
             ContentView(configureError: configureError)
                 .environmentObject(model)
                 .onOpenURL { url in
-                    Task { @MainActor in
-                        await model.wearables.handleIncomingURL(url)
-                    }
+                    Task { await MetaWearablesURL.handle(url) }
                 }
         }
     }

@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import CoreMedia
 import MWDATCamera
 import MWDATCore
 
@@ -8,552 +9,362 @@ enum SetupItemStatus: Equatable {
     case success
 }
 
-/// Meta Wearables DAT — glasses camera registration, permissions, and live stream.
+/// Meta Wearables — same registration/camera/session flow as Bypass Market Checker.
 @MainActor
 final class WearablesManager: ObservableObject {
-    @Published private(set) var registrationLabel = "Waiting for connection..."
-    @Published private(set) var cameraLabel = "Waiting for approval..."
+    @Published private(set) var wearablesStatus = ""
     @Published private(set) var registrationSetupStatus: SetupItemStatus = .waiting
     @Published private(set) var cameraSetupStatus: SetupItemStatus = .waiting
     @Published private(set) var isRegistered = false
     @Published private(set) var cameraGranted = false
-    @Published private(set) var isStreaming = false
-    @Published private(set) var canRequestCamera = false
-    @Published private(set) var metaSetupStarted = false
     @Published private(set) var registrationStateName = "available"
-    @Published private(set) var lastMetaSyncNote = ""
-    @Published private(set) var lastMetaCallback = ""
     @Published private(set) var glassesDevicesLabel = "Glasses: scanning…"
     @Published private(set) var glassesDeviceCount = 0
     @Published private(set) var sdkRegistered = false
-    @Published private(set) var sdkConfigureNote = ""
 
-    private var registrationAttempted = false
+    var onVideoFrame: ((VideoFrame) -> Void)?
+    var onPhotoSampleBuffer: ((CMSampleBuffer) -> Void)?
+
     private var registrationOpenedAt: Date?
     private var pendingCameraPermissionRetry = false
     private var urlHandledObserver: NSObjectProtocol?
-    private var lastHandledURLTime: Date?
-    private var lastHandledURLString: String?
-    private var foregroundSyncTask: Task<Void, Never>?
+    private var registrationMonitorTask: Task<Void, Never>?
+    private var foregroundObserver: NSObjectProtocol?
     private var didConfigure = false
-    private var isFinishingRegistration = false
+    private var bluetoothMonitor: BluetoothStateMonitor?
 
-    var onVideoFrame: ((VideoFrame) -> Void)?
+    private var autoDeviceSelector: AutoDeviceSelector?
+    private var readyDeviceSession: DeviceSession?
+    private var readySessionStateTask: Task<Void, Never>?
+    private var activeDeviceMonitorTask: Task<Void, Never>?
+    private var cameraStream: MWDATCamera.Stream?
+    private var stateToken: Any?
+    private var frameToken: Any?
+    private var photoToken: Any?
+    private var photoCaptureContinuation: CheckedContinuation<Data, Error>?
+    private var deviceObserveTask: Task<Void, Never>?
 
-    private var sdk: any WearablesInterface { Wearables.shared }
-    private var deviceSelector: AutoDeviceSelector?
-    private var deviceSession: DeviceSession?
-    private var glassesStream: MWDATCamera.Stream?
-    private var frameListener: Any?
-    private var observeTasks: [Task<Void, Never>] = []
-
-    private var registrationConfirmed = false
-    private var cameraPermissionConfirmed = false
-    private var latestDeviceIDs: [DeviceIdentifier] = []
-
-    private static let metaSetupKey = "metaSetupStarted"
-    private static let registrationConfirmedKey = "metaRegistrationConfirmed"
     private static let cameraConfirmedKey = "metaCameraConfirmed"
 
+    private var sdk: any WearablesInterface { Wearables.shared }
+
     init() {
-        metaSetupStarted = UserDefaults.standard.bool(forKey: Self.metaSetupKey)
-        registrationConfirmed = UserDefaults.standard.bool(forKey: Self.registrationConfirmedKey)
-        cameraPermissionConfirmed = UserDefaults.standard.bool(forKey: Self.cameraConfirmedKey)
-        applyPersistedMetaState()
-    }
-
-    private func applyPersistedMetaState() {
-        // Persisted flags only unlock UI steps; SDK registrationState is authoritative.
-        if cameraPermissionConfirmed {
+        if UserDefaults.standard.bool(forKey: Self.cameraConfirmedKey) {
             cameraGranted = true
-            cameraLabel = "Successful"
+            cameraSetupStatus = .success
         }
-        if metaSetupStarted || registrationConfirmed {
-            unlockCameraStepIfNeeded()
-        }
-    }
-
-    private var foregroundObserver: NSObjectProtocol?
-
-    private func ensureMetaSDKReady() {
-        if deviceSelector == nil {
-            deviceSelector = AutoDeviceSelector(wearables: sdk)
-        }
-        guard !didConfigure else { return }
-        didConfigure = true
-        startObservers()
-        startRegistrationMonitoring()
-        installForegroundObserver()
     }
 
     func configure(configError: String? = nil) {
-        sdkConfigureNote = configError ?? "SDK configured"
-        ensureMetaSDKReady()
-        applyRegistrationState(sdk.registrationState)
+        if let configError {
+            wearablesStatus = "SDK configure: \(configError)"
+        }
+        guard !didConfigure else { return }
+        didConfigure = true
+        startRegistrationMonitoring()
+        startDeviceObserver()
+        installForegroundObserver()
         refreshSetupProgress()
+        applyRegistrationState(sdk.registrationState)
         Task { await onAppBecameActive() }
     }
 
-    private func startRegistrationMonitoring() {
-        guard urlHandledObserver == nil else { return }
+    // MARK: - Bypass: startRegistrationMonitoring
 
+    func startRegistrationMonitoring() {
+        guard registrationMonitorTask == nil else { return }
+
+        refreshSetupProgress()
+        startActiveDeviceMonitoring()
+
+        registrationMonitorTask = Task { [weak self] in
+            for await state in Wearables.shared.registrationStateStream() {
+                await MainActor.run {
+                    self?.handleRegistrationStateChange(state)
+                }
+            }
+        }
+
+        guard urlHandledObserver == nil else { return }
         urlHandledObserver = NotificationCenter.default.addObserver(
             forName: .wearablesURLHandled,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
-                self.registrationOpenedAt = nil
-                self.refreshSetupProgress()
+                self?.registrationOpenedAt = nil
+                self?.refreshSetupProgress()
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
-
-                if self.pendingCameraPermissionRetry {
-                    await self.finishPendingCameraPermissionIfPossible()
+                if self?.pendingCameraPermissionRetry == true {
+                    await self?.finishPendingCameraPermissionIfPossible()
                 } else {
-                    self.refreshSetupProgress()
+                    self?.refreshSetupProgress()
                 }
             }
         }
     }
 
-    func handleIncomingURL(_ url: URL) async {
-        ensureMetaSDKReady()
+    private func handleRegistrationStateChange(_ state: RegistrationState) {
+        registrationStateName = String(describing: state)
+        sdkRegistered = state == .registered
+        isRegistered = sdkRegistered
 
-        let key = url.absoluteString
-        let now = Date()
-        if lastHandledURLString == key,
-           let last = lastHandledURLTime,
-           now.timeIntervalSince(last) < 0.5 {
-            return
-        }
-        lastHandledURLString = key
-        lastHandledURLTime = now
-
-        NSLog("ViewCaster: handleIncomingURL \(key)")
-        lastMetaCallback = key
-        do {
-            let handled = try await sdk.handleUrl(url)
-            NSLog("ViewCaster: handleUrl handled=\(handled) state=\(sdk.registrationState)")
+        switch state {
+        case .registered:
             registrationOpenedAt = nil
-            applyRegistrationState(sdk.registrationState)
-            if handled {
-                NotificationCenter.default.post(name: .wearablesURLHandled, object: url)
+            wearablesStatus = "Registered with Meta AI."
+            Task { await validateCameraPermissionFlag() }
+            refreshSetupProgress()
+            if cameraGranted {
+                beginGlassesConnectionSetup(showStatus: false)
             }
-        } catch {
-            registrationLabel = "Meta callback error: \(error.localizedDescription)"
-            lastMetaSyncNote = "Callback error: \(error.localizedDescription)"
-            NSLog("ViewCaster: handleUrl error: \(error.localizedDescription)")
+        case .registering:
+            wearablesStatus = "Finishing Meta AI registration..."
+        case .available:
+            wearablesStatus = "Register the app, allow camera, then capture from the glasses."
+        case .unavailable:
+            wearablesStatus = "Registration unavailable. Check Meta AI and Developer Mode."
+        @unknown default:
+            break
         }
-
-        _ = await waitForRegistrationReady(timeoutSeconds: 10)
-        refreshSetupProgress()
     }
 
-    /// Backward-compatible entry for RelayViewModel.
-    func handleCallback(_ url: URL) async {
-        await handleIncomingURL(url)
+    private func applyRegistrationState(_ state: RegistrationState) {
+        handleRegistrationStateChange(state)
     }
 
-    private func refreshSetupProgress() {
+    func refreshSetupProgress() {
         if isRegistrationReady(sdk.registrationState) {
             registrationSetupStatus = .success
         } else if registrationSetupStatus != .success {
             registrationSetupStatus = .waiting
         }
 
-        if cameraPermissionConfirmed || cameraGranted {
+        if UserDefaults.standard.bool(forKey: Self.cameraConfirmedKey) || cameraGranted {
             cameraSetupStatus = .success
         } else if cameraSetupStatus != .success {
             cameraSetupStatus = .waiting
         }
     }
 
-    private func installForegroundObserver() {
-        guard foregroundObserver == nil else { return }
-        foregroundObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.willEnterForegroundNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                await self?.onAppBecameActive()
+    // MARK: - Bypass: startRegistration
+
+    func startRegistration() {
+        Task {
+            if isRegistrationReady(sdk.registrationState) {
+                wearablesStatus = "Already registered with Meta AI."
+                return
             }
-        }
 
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                await self?.onAppBecameActive()
-            }
-        }
-    }
-
-    private func startObservers() {
-        observeTasks.forEach { $0.cancel() }
-        var tasks: [Task<Void, Never>] = [
-            Task { [weak self] in
-                guard let self else { return }
-                for await state in self.sdk.registrationStateStream() {
-                    await MainActor.run {
-                        self.applyRegistrationState(state)
-                        self.refreshSetupProgress()
-                        if state == .registered {
-                            self.registrationOpenedAt = nil
-                            Task { await self.validateCameraPermissionFlag() }
-                        }
-                    }
-                }
-            },
-            Task { [weak self] in
-                guard let self else { return }
-                for await devices in self.sdk.devicesStream() {
-                    await MainActor.run {
-                        self.updateDevices(devices)
-                    }
-                }
-            },
-        ]
-        if let selector = deviceSelector {
-            tasks.append(Task { [weak self] in
-                for await deviceId in selector.activeDeviceStream() {
-                    await MainActor.run { [weak self] in
-                        guard let self, let deviceId else { return }
-                        let name = self.sdk.deviceForIdentifier(deviceId)?.nameOrId() ?? deviceId
-                        if self.glassesDeviceCount > 0 {
-                            self.glassesDevicesLabel = "Glasses: \(self.glassesDeviceCount) detected, active: \(name)"
-                        } else {
-                            self.glassesDevicesLabel = "Glasses: active \(name)"
-                        }
-                    }
-                }
-            })
-        }
-        observeTasks = tasks
-    }
-
-    private func updateDevices(_ devices: [DeviceIdentifier]) {
-        latestDeviceIDs = devices
-        glassesDeviceCount = devices.count
-        if devices.isEmpty {
-            glassesDevicesLabel = sdkRegistered
-                ? "Glasses: none detected — wear glasses, open Meta AI, Bluetooth on"
-                : "Glasses: none (Meta SDK not registered yet)"
-        } else {
-            let names = devices.prefix(2).map { id in
-                sdk.deviceForIdentifier(id)?.nameOrId() ?? "\(id)"
-            }
-            glassesDevicesLabel = "Glasses: \(devices.count) detected (\(names.joined(separator: ", ")))"
-        }
-    }
-
-    private func applyRegistrationState(_ state: RegistrationState) {
-        registrationStateName = describeRegistrationState(state)
-        sdkRegistered = (state == .registered)
-        isRegistered = sdkRegistered
-
-        switch state {
-        case .registered:
-            registrationOpenedAt = nil
-            confirmRegistration()
-        case .registering:
-            isRegistered = false
-            registrationLabel = "Finishing Meta AI registration..."
-            if metaSetupStarted || registrationConfirmed {
-                unlockCameraStepIfNeeded()
-            }
-        case .available:
-            isRegistered = false
-            if metaSetupStarted || registrationConfirmed {
-                unlockCameraStepIfNeeded()
-                registrationLabel = "Register the app, allow camera, then use Live Stream on the glasses."
-            } else {
-                canRequestCamera = false
-                registrationLabel = "Waiting for connection..."
-                cameraLabel = "Waiting for approval..."
-            }
-        case .unavailable:
-            isRegistered = false
-            if registrationAttempted {
-                unlockCameraStepIfNeeded()
-                registrationLabel = "Registration unavailable. Check Meta AI and Developer Mode."
-            } else {
-                canRequestCamera = false
-                registrationLabel = "Waiting for connection..."
-                cameraLabel = "Waiting for approval..."
-            }
-        @unknown default:
-            isRegistered = false
-        }
-    }
-
-    private func unavailableHelp(state: RegistrationState) -> String {
-        state == .unavailable
-            ? "Registration unavailable. Check Meta AI and Developer Mode."
-            : "Complete registration in Meta AI, then return here."
-    }
-
-    private func describeRegistrationState(_ state: RegistrationState) -> String {
-        switch state {
-        case .registered: return "registered"
-        case .registering: return "registering"
-        case .available: return "available (finish in Meta AI → tap Open)"
-        case .unavailable: return "unavailable (dev mode / Team ID / not eligible)"
-        @unknown default: return "unknown"
-        }
-    }
-
-    private func confirmRegistration() {
-        registrationConfirmed = true
-        UserDefaults.standard.set(true, forKey: Self.registrationConfirmedKey)
-        isRegistered = true
-        enableCameraStep()
-        registrationLabel = "Registered with Meta AI."
-        cameraLabel = cameraGranted ? "Successful" : "Waiting for approval..."
-        registrationSetupStatus = .success
-    }
-
-    private func confirmCameraPermission() {
-        cameraPermissionConfirmed = true
-        UserDefaults.standard.set(true, forKey: Self.cameraConfirmedKey)
-        cameraGranted = true
-        cameraLabel = "Successful"
-        canRequestCamera = true
-        cameraSetupStatus = .success
-    }
-
-    func userConfirmMetaConnected() {
-        markMetaSetupStarted()
-        lastMetaSyncNote = "Saved UI step only — Live Stream still needs Meta state = registered"
-        Task { await syncMetaStatus() }
-    }
-
-    func userConfirmCameraAllowed() {
-        confirmCameraPermission()
-        lastMetaSyncNote = "Saved — wear glasses and ensure Meta AI sees them"
-        Task { await syncMetaStatus() }
-    }
-
-    private func enableCameraStep() {
-        canRequestCamera = true
-        if !cameraGranted {
-            cameraLabel = "Waiting for approval..."
-        }
-    }
-
-    func unlockCameraStepIfNeeded() {
-        guard (metaSetupStarted || registrationConfirmed), !cameraGranted else { return }
-        canRequestCamera = true
-        cameraLabel = "Waiting for approval..."
-    }
-
-    var needsFinishConnection: Bool {
-        registrationSetupStatus != .success
-            && (metaSetupStarted || registrationAttempted)
-            && !sdkRegistered
-    }
-
-    func connectMetaAI() {
-        guard !sdkRegistered else {
-            registrationLabel = "Registered with Meta AI."
-            enableCameraStep()
-            return
-        }
-        registrationAttempted = true
-        Task { @MainActor in
+            wearablesStatus = "Opening Meta AI registration..."
             do {
-                registrationLabel = "Opening Meta AI registration..."
                 registrationOpenedAt = Date()
                 try await sdk.startRegistration()
-                markMetaSetupStarted()
-                registrationLabel = "Opened Meta AI. Return here after Connect."
-                unlockCameraStepIfNeeded()
+                wearablesStatus = "Opened Meta AI registration. Return here after approving."
             } catch RegistrationError.alreadyRegistered {
-                registrationOpenedAt = nil
-                registrationLabel = "Registered with Meta AI."
-                _ = await waitForRegistrationReady(timeoutSeconds: 10)
-                applyRegistrationState(sdk.registrationState)
-                refreshSetupProgress()
-                unlockCameraStepIfNeeded()
+                wearablesStatus = "Already registered with Meta AI."
             } catch {
                 if isRegistrationReady(sdk.registrationState) {
-                    registrationOpenedAt = nil
-                    registrationLabel = "Registered with Meta AI."
-                    refreshSetupProgress()
-                    unlockCameraStepIfNeeded()
+                    wearablesStatus = "Already registered with Meta AI."
                     return
                 }
-                if sdk.registrationState == .unavailable {
-                    registrationLabel = "Registration unavailable. Check Meta AI and Developer Mode."
-                    lastMetaSyncNote = unavailableHelp(state: sdk.registrationState)
-                } else {
-                    registrationLabel = "Registration error: \(error.localizedDescription)"
-                    lastMetaSyncNote = "Complete Connect in Meta AI, then return here."
-                }
-                unlockCameraStepIfNeeded()
+                wearablesStatus = "Registration failed: \(error.localizedDescription)"
             }
         }
     }
 
-    /// After Connect in Meta AI, sideloaded apps often miss the auto-redirect.
-    /// Opens Meta AI developer connections so the user can tap View Caster Relay → triggers viewcaster:// callback.
-    func finishRegistrationConnection() async {
-        guard registrationSetupStatus != .success else { return }
-        guard !isFinishingRegistration else { return }
-        isFinishingRegistration = true
-        defer { isFinishingRegistration = false }
+    /// RelayViewModel entry point — same as startRegistration().
+    func connectMetaAI() {
+        startRegistration()
+    }
 
-        ensureMetaSDKReady()
-        registrationAttempted = true
-        registrationLabel = "Opening Meta AI to finish connection…"
+    func openMetaAIApp() {
+        guard let url = URL(string: "fb-viewapp://") else {
+            wearablesStatus = "Could not open Meta AI app URL."
+            return
+        }
+        UIApplication.shared.open(url)
+    }
+
+    // MARK: - Bypass: requestCameraPermission
+
+    func requestCameraPermission() async {
+        if UserDefaults.standard.bool(forKey: Self.cameraConfirmedKey) {
+            markCameraPermissionGranted()
+            return
+        }
+
+        if let status = await safeCameraPermissionStatus(), status == .granted {
+            markCameraPermissionGranted()
+            return
+        }
+
+        if !isRegistrationReady(sdk.registrationState) {
+            wearablesStatus = "Register with Meta AI first."
+            return
+        }
+
+        let monitor = bluetoothMonitorInstance()
+        if !monitor.isPoweredOn {
+            wearablesStatus = "Waiting for Bluetooth..."
+            let ready = await monitor.waitUntilPoweredOn(timeoutSeconds: 2)
+            guard ready else {
+                wearablesStatus = "Bluetooth is \(monitor.stateDescription). Turn Bluetooth on, then retry Allow Camera."
+                return
+            }
+        }
+
+        wearablesStatus = "Opening Meta AI for camera permission..."
+        pendingCameraPermissionRetry = true
 
         do {
-            try await sdk.openDATGlassesAppUpdate()
-            registrationLabel = "In Meta AI, tap View Caster Relay to open this app."
+            try await openCameraPermissionInMetaAI()
         } catch {
-            NSLog("ViewCaster: openDATGlassesAppUpdate failed: \(error.localizedDescription)")
-            registrationLabel = "Re-opening Meta AI registration…"
-            do {
-                try await sdk.startRegistration()
-            } catch RegistrationError.alreadyRegistered {
-                _ = await waitForRegistrationReady(timeoutSeconds: 15)
-            } catch {
-                NSLog("ViewCaster: startRegistration retry failed: \(error.localizedDescription)")
+            if await resolveCameraPermissionIfAlreadyGranted() {
+                return
             }
+            pendingCameraPermissionRetry = true
+            wearablesStatus = "Waiting for camera approval in Meta AI."
         }
+    }
 
-        try? await Task.sleep(nanoseconds: 2_000_000_000)
-        _ = await waitForRegistrationReady(timeoutSeconds: 25)
+    func requestGlassesCamera() async {
+        await requestCameraPermission()
+    }
+
+    private func openCameraPermissionInMetaAI() async throws {
+        let status = try await sdk.requestPermission(.camera)
+        if status == .granted {
+            markCameraPermissionGranted()
+            return
+        }
+        if await resolveCameraPermissionIfAlreadyGranted() {
+            return
+        }
+        pendingCameraPermissionRetry = true
+        wearablesStatus = "Approve camera access in Meta AI, then return here."
+    }
+
+    private func markCameraPermissionGranted() {
+        pendingCameraPermissionRetry = false
+        UserDefaults.standard.set(true, forKey: Self.cameraConfirmedKey)
+        cameraGranted = true
+        cameraSetupStatus = .success
+        wearablesStatus = "Camera access approved."
         refreshSetupProgress()
-
-        if registrationSetupStatus == .success {
-            registrationOpenedAt = nil
-        }
+        beginGlassesConnectionSetup(showStatus: false)
     }
 
-    /// True when SDK is ready for glasses camera streaming.
-    var canStreamFromGlasses: Bool {
-        sdkRegistered
-    }
-
-    func resetMetaConnection() {
-        Task { @MainActor in
-            do {
-                registrationLabel = "Opening Meta AI to disconnect…"
-                try await sdk.startUnregistration()
-            } catch {
-                registrationLabel = "Reset failed: \(error.localizedDescription)"
-            }
-        }
-    }
-
-    func clearLocalMetaState() {
-        metaSetupStarted = false
-        registrationAttempted = false
-        registrationConfirmed = false
-        cameraPermissionConfirmed = false
-        isRegistered = false
-        cameraGranted = false
-        canRequestCamera = false
-        sdkRegistered = false
-        lastMetaSyncNote = ""
-        UserDefaults.standard.removeObject(forKey: Self.metaSetupKey)
-        UserDefaults.standard.removeObject(forKey: Self.registrationConfirmedKey)
-        UserDefaults.standard.removeObject(forKey: Self.cameraConfirmedKey)
-        registrationLabel = "Tap Connect Meta AI"
-        cameraLabel = "Connect Meta AI first"
-    }
-
-    func markMetaSetupStarted() {
-        metaSetupStarted = true
-        UserDefaults.standard.set(true, forKey: Self.metaSetupKey)
-        unlockCameraStepIfNeeded()
-    }
-
-    func refreshAfterForeground() async {
-        await onAppBecameActive()
-    }
+    // MARK: - Bypass: onAppBecameActive
 
     func onAppBecameActive() async {
-        foregroundSyncTask?.cancel()
-        foregroundSyncTask = Task { @MainActor in
-            unlockCameraStepIfNeeded()
-
-            // Match Bypass: poll registrationStateStream when user returns from Meta AI.
-            let timeout: TimeInterval = registrationOpenedAt == nil ? 2 : 10
-            if await waitForRegistrationReady(timeoutSeconds: timeout) {
-                registrationOpenedAt = nil
-                refreshSetupProgress()
-            }
-
-            if pendingCameraPermissionRetry {
-                try? await Task.sleep(nanoseconds: 600_000_000)
-                await finishPendingCameraPermissionIfPossible()
-            } else {
-                _ = await resolveCameraPermissionIfAlreadyGranted()
-            }
-
-            await validateCameraPermissionFlag()
-            await syncMetaStatus()
-            refreshSetupProgress()
-        }
-        await foregroundSyncTask?.value
-    }
-
-    @discardableResult
-    private func ensureRegistrationComplete() async -> Bool {
-        applyRegistrationState(sdk.registrationState)
-        if isRegistrationReady(sdk.registrationState) {
-            registrationOpenedAt = nil
-            refreshSetupProgress()
-            return true
-        }
-
-        if sdk.registrationState == .registering {
-            registrationLabel = "Finishing Meta AI registration..."
-            if await waitForRegistrationReady(timeoutSeconds: 15) {
-                registrationOpenedAt = nil
-                refreshSetupProgress()
-                return true
-            }
-        }
-
-        let timeout: TimeInterval = (registrationOpenedAt != nil || registrationAttempted) ? 10 : 3
+        let timeout: TimeInterval = registrationOpenedAt == nil ? 2 : 10
         if await waitForRegistrationReady(timeoutSeconds: timeout) {
             registrationOpenedAt = nil
             refreshSetupProgress()
-            return true
         }
 
-        refreshSetupProgress()
-        return isRegistrationReady(sdk.registrationState)
+        if pendingCameraPermissionRetry {
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            await finishPendingCameraPermissionIfPossible()
+        } else {
+            _ = await resolveCameraPermissionIfAlreadyGranted()
+            refreshSetupProgress()
+        }
     }
 
-    private func validateCameraPermissionFlag() async {
-        guard cameraPermissionConfirmed else {
-            if cameraSetupStatus != .success {
-                cameraSetupStatus = .waiting
+    func runWearablesDiagnostics() async {
+        var permissionText = "unknown"
+        do {
+            permissionText = String(describing: try await sdk.checkPermissionStatus(.camera))
+        } catch {
+            permissionText = "error: \(error.localizedDescription)"
+        }
+
+        let registrationText = String(describing: sdk.registrationState)
+        let monitor = bluetoothMonitorInstance()
+        wearablesStatus = """
+        MetaAppID: \(datMetaAppID)
+        ClientToken: \(maskedToken(datClientToken))
+        TeamID(plist): \(datTeamID)
+        Sideload Team: \(SigningInfo.embeddedTeamIdentifier ?? "?")
+        Bundle: \(runtimeBundleID)
+        Bluetooth: \(monitor.stateDescription)
+        Registration: \(registrationText)
+        Camera: \(permissionText)
+        Glasses: \(glassesDeviceCount)
+        """
+    }
+
+    // MARK: - Photo capture (Bypass pattern, not live stream)
+
+    var canStreamFromGlasses: Bool {
+        sdkRegistered && cameraGranted
+    }
+
+    func captureGlassesPhoto(status: @escaping (String) -> Void) async throws {
+        guard await ensureRegistered() else {
+            throw WearablesStreamError.notRegistered
+        }
+        guard cameraGranted || UserDefaults.standard.bool(forKey: Self.cameraConfirmedKey) else {
+            throw WearablesStreamError.cameraDenied
+        }
+
+        status("Preparing glasses for photo...")
+        let ready = await ensureReadyDeviceSession(showStatus: false, timeoutSeconds: 30)
+        guard ready else {
+            throw WearablesStreamError.noEligibleDevice
+        }
+
+        if cameraStream != nil {
+            await stopCameraStreamOnly()
+        }
+
+        try await startGlassesStreamForCapture(quiet: true)
+        status("Capturing photo from glasses...")
+
+        let photoData = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
+            photoCaptureContinuation = continuation
+            Task { @MainActor in
+                guard let stream = self.cameraStream else {
+                    continuation.resume(throwing: WearablesStreamError.streamFailed)
+                    return
+                }
+                _ = await self.triggerSinglePhotoCapture(on: stream)
             }
-            return
         }
 
-        guard let status = await safeCameraPermissionStatus() else { return }
-
-        if status == .granted {
-            confirmCameraPermission()
-            return
+        if let sample = sampleBufferFromJPEG(photoData) {
+            onPhotoSampleBuffer?(sample)
         }
 
-        if cameraSetupStatus == .success {
-            UserDefaults.standard.set(false, forKey: Self.cameraConfirmedKey)
-            cameraPermissionConfirmed = false
-            cameraGranted = false
-            cameraSetupStatus = .waiting
-            cameraLabel = "Waiting for approval..."
-        }
+        await stopCameraStreamOnly()
+        status("Photo captured")
+    }
+
+    /// Legacy live-stream entry — now captures a single photo like Bypass.
+    func startGlassesStream(status: @escaping (String) -> Void) async throws {
+        try await captureGlassesPhoto(status: status)
+    }
+
+    func stopGlassesStream() {
+        Task { await stopCameraStreamOnly() }
+    }
+
+    // MARK: - Private helpers (Bypass)
+
+    private var datConfig: [String: Any] {
+        Bundle.main.infoDictionary?["MWDAT"] as? [String: Any] ?? [:]
+    }
+
+    private var datMetaAppID: String { datConfig["MetaAppID"] as? String ?? "<missing>" }
+    private var datClientToken: String { datConfig["ClientToken"] as? String ?? "<missing>" }
+    private var datTeamID: String { datConfig["TeamID"] as? String ?? "<missing>" }
+    private var runtimeBundleID: String { Bundle.main.bundleIdentifier ?? "<missing>" }
+
+    private func maskedToken(_ token: String) -> String {
+        guard token.count > 8 else { return token }
+        return "\(token.prefix(4))...\(token.suffix(4))"
     }
 
     private func isRegistrationReady(_ state: RegistrationState) -> Bool {
@@ -561,17 +372,12 @@ final class WearablesManager: ObservableObject {
     }
 
     private func waitForRegistrationReady(timeoutSeconds: TimeInterval) async -> Bool {
-        applyRegistrationState(sdk.registrationState)
-        if isRegistrationReady(sdk.registrationState) {
-            return true
-        }
+        if isRegistrationReady(sdk.registrationState) { return true }
 
         let gate = RegistrationWaitGate()
         let streamTask = Task { @MainActor in
             for await state in self.sdk.registrationStateStream() {
-                if await gate.isFinished {
-                    return
-                }
+                if await gate.isFinished { return }
                 self.applyRegistrationState(state)
                 if self.isRegistrationReady(state) {
                     await gate.finish(true)
@@ -595,270 +401,351 @@ final class WearablesManager: ObservableObject {
         }
 
         streamTask.cancel()
-        applyRegistrationState(sdk.registrationState)
         return isRegistrationReady(sdk.registrationState)
     }
 
-    private func safeCameraPermissionStatus() async -> PermissionStatus? {
-        do {
-            return try await sdk.checkPermissionStatus(.camera)
-        } catch {
-            return nil
+    private func ensureRegistered() async -> Bool {
+        if isRegistrationReady(sdk.registrationState) { return true }
+        if sdk.registrationState == .registering {
+            if await waitForRegistrationReady(timeoutSeconds: 15) { return true }
         }
+        if await waitForRegistrationReady(timeoutSeconds: 3) { return true }
+        return false
+    }
+
+    private func safeCameraPermissionStatus() async -> PermissionStatus? {
+        try? await sdk.checkPermissionStatus(.camera)
     }
 
     private func waitForCameraPermissionStatus(timeoutSeconds: TimeInterval) async -> PermissionStatus? {
-        if let status = await safeCameraPermissionStatus() {
-            return status
-        }
+        if let status = await safeCameraPermissionStatus() { return status }
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while Date() < deadline {
             try? await Task.sleep(nanoseconds: 200_000_000)
-            if let status = await safeCameraPermissionStatus() {
-                return status
-            }
+            if let status = await safeCameraPermissionStatus() { return status }
         }
         return await safeCameraPermissionStatus()
     }
 
     private func resolveCameraPermissionIfAlreadyGranted() async -> Bool {
-        if let status = await waitForCameraPermissionStatus(timeoutSeconds: 1),
-           status == .granted {
-            confirmCameraPermission()
-            pendingCameraPermissionRetry = false
+        if let status = await waitForCameraPermissionStatus(timeoutSeconds: 1), status == .granted {
+            markCameraPermissionGranted()
             return true
         }
-
-        if cameraPermissionConfirmed {
-            if let status = await safeCameraPermissionStatus(), status == .granted {
-                confirmCameraPermission()
-                pendingCameraPermissionRetry = false
-                return true
-            }
-        }
-
         return false
     }
 
     private func finishPendingCameraPermissionIfPossible() async {
         try? await Task.sleep(nanoseconds: 300_000_000)
-        if await resolveCameraPermissionIfAlreadyGranted() {
+        _ = await resolveCameraPermissionIfAlreadyGranted()
+    }
+
+    private func validateCameraPermissionFlag() async {
+        guard UserDefaults.standard.bool(forKey: Self.cameraConfirmedKey) else {
+            cameraSetupStatus = .waiting
             return
         }
-    }
-
-    func syncMetaStatus() async {
-        applyRegistrationState(sdk.registrationState)
-        guard sdkRegistered else { return }
-        confirmRegistration()
-        do {
-            let status = try await sdk.checkPermissionStatus(.camera)
-            enableCameraStep()
-            if status == .granted {
-                confirmCameraPermission()
-                lastMetaSyncNote = "Synced — registered, camera granted, \(glassesDeviceCount) glasses"
-            } else if !cameraGranted {
-                lastMetaSyncNote = "Registered — allow camera in Meta AI (\(glassesDeviceCount) glasses detected)"
-            } else {
-                lastMetaSyncNote = "Synced — \(glassesDeviceCount) glasses detected"
-            }
-        } catch {
-            lastMetaSyncNote = "Registered but sync failed: \(error.localizedDescription)"
-            NSLog("ViewCaster: checkPermissionStatus: \(error.localizedDescription)")
-        }
-    }
-
-    func requestGlassesCamera() async {
-        if registrationSetupStatus != .success {
-            _ = await ensureRegistrationComplete()
-        }
-        if registrationSetupStatus != .success {
-            cameraLabel = "Register with Meta AI first."
-            return
-        }
-
-        await syncMetaStatus()
-        if cameraGranted { return }
-
-        unlockCameraStepIfNeeded()
-        cameraLabel = "Opening Meta AI for camera permission..."
-        pendingCameraPermissionRetry = true
-        do {
-            let status = try await sdk.requestPermission(.camera)
-            applyRegistrationState(sdk.registrationState)
-            enableCameraStep()
-            if status == .granted {
-                confirmCameraPermission()
-                pendingCameraPermissionRetry = false
-            } else {
-                cameraLabel = "Waiting for camera approval in Meta AI."
-            }
-        } catch {
-            if await resolveCameraPermissionIfAlreadyGranted() {
-                return
-            }
-            cameraLabel = "Waiting for camera approval in Meta AI."
-            await syncMetaStatus()
-        }
-    }
-
-    func startGlassesStream(status: @escaping (String) -> Void) async throws {
-        applyRegistrationState(sdk.registrationState)
-        await syncMetaStatus()
-
-        guard sdkRegistered else {
-            throw WearablesStreamError.notRegistered
-        }
-
-        var permissionOK = cameraGranted || cameraPermissionConfirmed
-        if !permissionOK, let sdkStatus = try? await sdk.checkPermissionStatus(.camera), sdkStatus == .granted {
-            permissionOK = true
-        }
-        if permissionOK {
-            confirmCameraPermission()
+        guard let status = await safeCameraPermissionStatus() else { return }
+        if status == .granted {
+            markCameraPermissionGranted()
         } else {
-            throw WearablesStreamError.cameraDenied
+            UserDefaults.standard.set(false, forKey: Self.cameraConfirmedKey)
+            cameraGranted = false
+            cameraSetupStatus = .waiting
+        }
+    }
+
+    private func bluetoothMonitorInstance() -> BluetoothStateMonitor {
+        if let bluetoothMonitor { return bluetoothMonitor }
+        let monitor = BluetoothStateMonitor()
+        bluetoothMonitor = monitor
+        return monitor
+    }
+
+    private func autoSelector() -> AutoDeviceSelector {
+        if let autoDeviceSelector { return autoDeviceSelector }
+        let selector = AutoDeviceSelector(wearables: sdk)
+        autoDeviceSelector = selector
+        return selector
+    }
+
+    private func startDeviceObserver() {
+        deviceObserveTask?.cancel()
+        deviceObserveTask = Task { [weak self] in
+            guard let self else { return }
+            for await devices in self.sdk.devicesStream() {
+                await MainActor.run {
+                    self.glassesDeviceCount = devices.count
+                    if devices.isEmpty {
+                        self.glassesDevicesLabel = "Glasses: none detected"
+                    } else {
+                        self.glassesDevicesLabel = "Glasses: \(devices.count) detected"
+                    }
+                }
+            }
+        }
+    }
+
+    private func startActiveDeviceMonitoring() {
+        guard activeDeviceMonitorTask == nil else { return }
+        let selector = autoSelector()
+        activeDeviceMonitorTask = Task {
+            for await _ in selector.activeDeviceStream() { }
+        }
+    }
+
+    private func beginGlassesConnectionSetup(showStatus: Bool) {
+        Task {
+            _ = await ensureReadyDeviceSession(showStatus: showStatus, timeoutSeconds: 60)
+        }
+    }
+
+    private func ensureReadyDeviceSession(showStatus: Bool, timeoutSeconds: TimeInterval) async -> Bool {
+        if let session = readyDeviceSession, session.state == .started { return true }
+        return await establishReadyDeviceSession(showStatus: showStatus, timeoutSeconds: timeoutSeconds)
+    }
+
+    private func establishReadyDeviceSession(showStatus: Bool, timeoutSeconds: TimeInterval) async -> Bool {
+        guard isRegistrationReady(sdk.registrationState) else { return false }
+        guard UserDefaults.standard.bool(forKey: Self.cameraConfirmedKey) else { return false }
+
+        if showStatus {
+            wearablesStatus = "Preparing glasses for capture..."
         }
 
-        stopGlassesStream()
-
-        if deviceSelector == nil {
-            deviceSelector = AutoDeviceSelector(wearables: sdk)
+        let monitor = bluetoothMonitorInstance()
+        if !monitor.isPoweredOn {
+            _ = await monitor.waitUntilPoweredOn(timeoutSeconds: 5)
         }
 
-        status("Looking for Meta glasses…")
-        try await waitForGlassesDevice(status: status, timeoutSeconds: 60)
-
-        status("Connecting to glasses…")
-        let session: DeviceSession
-        do {
-            session = try createDeviceSession()
-        } catch {
-            throw mapSessionError(error)
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            do {
+                let session = try await getOrCreateStartedSession()
+                readyDeviceSession = session
+                if showStatus {
+                    wearablesStatus = "Glasses ready for capture."
+                }
+                return true
+            } catch {
+                readyDeviceSession = nil
+                try? await Task.sleep(nanoseconds: 750_000_000)
+            }
         }
-        deviceSession = session
+        return readyDeviceSession?.state == .started
+    }
 
-        do {
-            try session.start()
-        } catch {
-            throw mapSessionError(error)
+    private func getOrCreateStartedSession() async throws -> DeviceSession {
+        if let session = readyDeviceSession, session.state == .started {
+            return session
         }
 
-        status("Waiting for glasses session…")
-        let deadline = Date().addingTimeInterval(45)
-        var sessionReady = false
+        let session = try sdk.createSession(deviceSelector: autoSelector())
+        readyDeviceSession = session
+        try session.start()
+
+        if session.state == .started {
+            observeReadySessionState(session)
+            return session
+        }
+
         for await state in session.stateStream() {
-            NSLog("ViewCaster: deviceSession \(state)")
             if state == .started {
-                sessionReady = true
-                break
+                observeReadySessionState(session)
+                return session
             }
-            if Date() > deadline {
-                throw WearablesStreamError.deviceTimeout
+            if state == .stopped {
+                throw WearablesStreamError.sessionFailed("Session stopped before start.")
             }
         }
-        if !sessionReady {
-            throw WearablesStreamError.sessionFailed("Glasses session closed")
+        throw WearablesStreamError.sessionFailed("Session failed to start.")
+    }
+
+    private func observeReadySessionState(_ session: DeviceSession) {
+        readySessionStateTask?.cancel()
+        readySessionStateTask = Task { [weak self] in
+            for await state in session.stateStream() {
+                await MainActor.run {
+                    if state == .stopped {
+                        self?.readyDeviceSession = nil
+                    }
+                }
+            }
+        }
+    }
+
+    private func startGlassesStreamForCapture(quiet: Bool) async throws {
+        try await startGlassesStreamAttempt(quiet: quiet, photoCaptureOnly: true)
+    }
+
+    private func startGlassesStreamAttempt(quiet: Bool, photoCaptureOnly: Bool) async throws {
+        let monitor = bluetoothMonitorInstance()
+        if !monitor.isPoweredOn {
+            guard await monitor.waitUntilPoweredOn(timeoutSeconds: 3) else {
+                throw WearablesStreamError.noEligibleDevice
+            }
         }
 
-        status("Starting camera stream…")
-        let config = StreamConfiguration(
-            videoCodec: .raw,
-            resolution: .medium,
-            frameRate: 24
-        )
-        guard let stream = try session.addStream(config: config) else {
-            throw WearablesStreamError.streamFailed
+        let deadline = Date().addingTimeInterval(20)
+        var lastError: Error = WearablesStreamError.noEligibleDevice
+        while Date() < deadline {
+            do {
+                let session = try await getOrCreateStartedSession()
+                try await attachCameraStream(to: session, quiet: quiet, photoCaptureOnly: photoCaptureOnly)
+                return
+            } catch {
+                lastError = error
+                readyDeviceSession = nil
+                try? await Task.sleep(nanoseconds: 450_000_000)
+            }
         }
-        glassesStream = stream
+        throw lastError
+    }
 
-        frameListener = stream.videoFramePublisher.listen { [weak self] frame in
-            Task { @MainActor [weak self] in
+    private func attachCameraStream(
+        to session: DeviceSession,
+        quiet: Bool,
+        photoCaptureOnly: Bool
+    ) async throws {
+        let stream = try await createCameraStreamWithRetry(session)
+        cameraStream = stream
+
+        stateToken = stream.statePublisher.listen { [weak self] state in
+            Task { @MainActor in
+                guard let self else { return }
+                let text = String(describing: state).lowercased()
+                if photoCaptureOnly,
+                   self.photoCaptureContinuation != nil,
+                   text.contains("streaming") || text.contains("started") {
+                    _ = await self.triggerSinglePhotoCapture(on: stream)
+                }
+                if !quiet {
+                    self.wearablesStatus = "Stream: \(String(describing: state))"
+                }
+            }
+        }
+
+        photoToken = stream.photoDataPublisher.listen { [weak self] photoData in
+            Task { @MainActor in
+                guard let self, let continuation = self.photoCaptureContinuation else { return }
+                self.photoCaptureContinuation = nil
+                continuation.resume(returning: photoData.data)
+            }
+        }
+
+        frameToken = stream.videoFramePublisher.listen { [weak self] frame in
+            Task { @MainActor in
                 self?.onVideoFrame?(frame)
             }
         }
 
         await stream.start()
-        status("Camera stream started")
-
-        isStreaming = true
-        lastMetaSyncNote = "Glasses stream active"
     }
 
-    private func waitForGlassesDevice(
-        status: @escaping (String) -> Void,
-        timeoutSeconds: TimeInterval
-    ) async throws {
-        if !latestDeviceIDs.isEmpty { return }
-
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
-        while Date() <= deadline {
-            applyRegistrationState(sdk.registrationState)
-            if !latestDeviceIDs.isEmpty { return }
-            status("Waiting for glasses — wear them, Meta AI open on phone, Bluetooth on…")
-            try await Task.sleep(nanoseconds: 1_000_000_000)
-        }
-        throw WearablesStreamError.noEligibleDevice
-    }
-
-    private func createDeviceSession() throws -> DeviceSession {
-        if let deviceId = latestDeviceIDs.first {
-            let specific = SpecificDeviceSelector(device: deviceId)
-            if let session = try? sdk.createSession(deviceSelector: specific) {
-                return session
+    private func createCameraStreamWithRetry(_ session: DeviceSession, maxAttempts: Int = 10) async throws -> MWDATCamera.Stream {
+        let config = StreamConfiguration(
+            videoCodec: .raw,
+            resolution: .low,
+            frameRate: 24
+        )
+        for attempt in 1...maxAttempts {
+            if let stream = try? session.addStream(config: config) {
+                return stream
             }
+            wearablesStatus = "Preparing camera stream (\(attempt)/\(maxAttempts))..."
+            try await Task.sleep(nanoseconds: 250_000_000)
         }
-        guard let selector = deviceSelector else {
-            throw WearablesStreamError.noEligibleDevice
-        }
-        return try sdk.createSession(deviceSelector: selector)
+        throw WearablesStreamError.streamFailed
     }
 
-    private func mapSessionError(_ error: Error) -> WearablesStreamError {
-        let text = error.localizedDescription.lowercased()
-        if text.contains("eligible") || text.contains("no device") {
-            return .noEligibleDevice
+    private func triggerSinglePhotoCapture(on stream: MWDATCamera.Stream) async -> Bool {
+        for _ in 1...4 {
+            guard photoCaptureContinuation != nil else { return true }
+            if stream.capturePhoto(format: PhotoCaptureFormat.jpeg) {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 250_000_000)
         }
-        return .sessionFailed(error.localizedDescription)
+        return false
     }
 
-    func stopGlassesStream() {
-        frameListener = nil
-        Task { await glassesStream?.stop() }
-        glassesStream = nil
-        try? deviceSession?.stop()
-        deviceSession = nil
-        isStreaming = false
+    private func stopCameraStreamOnly() async {
+        stateToken = nil
+        frameToken = nil
+        photoToken = nil
+        await cameraStream?.stop()
+        cameraStream = nil
+    }
+
+    private func installForegroundObserver() {
+        guard foregroundObserver == nil else { return }
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.onAppBecameActive() }
+        }
     }
 
     enum WearablesStreamError: LocalizedError {
         case notRegistered
         case cameraDenied
         case streamFailed
-        case deviceTimeout
         case noEligibleDevice
         case sessionFailed(String)
 
         var errorDescription: String? {
             switch self {
-            case .notRegistered:
-                return "Meta SDK not registered. Connect Meta AI → approve → tap Open (not app switcher)."
-            case .cameraDenied:
-                return "Allow glasses camera in Meta AI, then tap confirm below."
-            case .streamFailed:
-                return "Could not start glasses stream — wear glasses, Meta AI open, Bluetooth on."
-            case .deviceTimeout:
-                return "Glasses timed out — wear them, wait until Meta AI shows connected."
-            case .noEligibleDevice:
-                return """
-                No eligible glasses found. Wear glasses, open Meta AI on phone, Developer Mode on. \
-                Meta state must show registered (not available). Re-connect Meta AI and tap Open.
-                """
-            case .sessionFailed(let detail):
-                return detail
+            case .notRegistered: return "Register with Meta AI first."
+            case .cameraDenied: return "Allow camera in Meta AI first."
+            case .streamFailed: return "Could not start glasses camera."
+            case .noEligibleDevice: return "No eligible glasses. Wear them, open Meta AI, Bluetooth on."
+            case .sessionFailed(let detail): return detail
             }
         }
     }
+}
+
+private func sampleBufferFromJPEG(_ data: Data) -> CMSampleBuffer? {
+    guard let image = UIImage(data: data), let cgImage = image.cgImage else { return nil }
+    let width = cgImage.width
+    let height = cgImage.height
+    var pixelBuffer: CVPixelBuffer?
+    let attrs = [
+        kCVPixelBufferCGImageCompatibilityKey: true,
+        kCVPixelBufferCGBitmapContextCompatibilityKey: true,
+    ] as CFDictionary
+    guard CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, attrs, &pixelBuffer) == kCVReturnSuccess,
+          let buffer = pixelBuffer else { return nil }
+    CVPixelBufferLockBaseAddress(buffer, [])
+    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+    guard let context = CGContext(
+        data: CVPixelBufferGetBaseAddress(buffer),
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+    ) else { return nil }
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+    var format: CMVideoFormatDescription?
+    CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: buffer, formatDescriptionOut: &format)
+    guard let format else { return nil }
+    var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: .zero, decodeTimeStamp: .invalid)
+    var sampleBuffer: CMSampleBuffer?
+    CMSampleBufferCreateForImageBuffer(
+        allocator: kCFAllocatorDefault,
+        imageBuffer: buffer,
+        dataReady: true,
+        makeDataReadyCallback: nil,
+        refcon: nil,
+        formatDescription: format,
+        sampleTiming: &timing,
+        sampleBufferOut: &sampleBuffer
+    )
+    return sampleBuffer
 }
 
 private actor RegistrationWaitGate {

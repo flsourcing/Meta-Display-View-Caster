@@ -29,8 +29,12 @@ targets:
         UILaunchScreen: {}
         MWDAT:
           AppLinkURLScheme: viewcaster://
-          MetaAppID: "0"
+          MetaAppID: "974304118762997"
+          ClientToken: "AR|974304118762997|80d303efb43a2a01cbbb6c730fde2f8d"
           TeamID: JM52FT93Z2
+          DAMEnabled: true
+          Analytics:
+            OptOut: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mdvc.viewcasterrelay

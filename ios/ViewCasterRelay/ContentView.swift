@@ -38,6 +38,10 @@ final class RelayViewModel: ObservableObject {
             self?.webrtc.pushGlassesFrame(frame)
         }
 
+        wearables.onPhotoSampleBuffer = { [weak self] buffer in
+            self?.webrtc.pushSampleBuffer(buffer)
+        }
+
         phoneCamera.onSampleBuffer = { [weak self] buffer in
             self?.webrtc.pushSampleBuffer(buffer)
         }
@@ -136,13 +140,11 @@ final class RelayViewModel: ObservableObject {
 
     func finishMetaConnection() {
         metaHint = ""
-        Task {
-            await wearables.finishRegistrationConnection()
-        }
+        wearables.openMetaAIApp()
     }
 
     func handleMetaCallback(_ url: URL) async {
-        await wearables.handleCallback(url)
+        await MetaWearablesURL.handle(url)
     }
 
     func onReturnFromBackground() {
@@ -199,8 +201,8 @@ final class RelayViewModel: ObservableObject {
                     self?.signaling.status = step
                 }
                 guard !Task.isCancelled else { return }
-                signaling.sendSignal(type: "stream-started")
-                signaling.status = "Casting from glasses"
+                signaling.sendSignal(type: "stream-started", payload: ["source": "glasses-photo"])
+                signaling.status = "Sent glasses photo to desktop"
                 return
             } catch {
                 wearables.stopGlassesStream()
@@ -299,37 +301,31 @@ struct ContentView: View {
                         Text("Meta Glasses Camera")
                             .font(.headline)
 
+                        if !model.wearables.wearablesStatus.isEmpty {
+                            Text(model.wearables.wearablesStatus)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.leading)
+                        }
+
+                        Button {
+                            model.wearables.openMetaAIApp()
+                        } label: {
+                            Label("Open Meta AI", systemImage: "app.connected.to.app.below.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+
                         MetaSetupStepView(
                             title: "Register with Meta AI",
                             statusLabel: model.wearables.registrationSetupStatus == .success ? "Successful" : "Waiting for connection...",
                             isSuccess: model.wearables.registrationSetupStatus == .success,
                             buttonTitle: "Register With Meta AI",
                             buttonIcon: "link",
-                            hint: "Tap Connect in Meta AI, then return here. Registration is detected automatically (same as Bypass). Use Finish Connection only if it stays stuck.",
+                            hint: "Complete registration in Meta AI, then return here. Next unlocks when connected.",
                             disabled: model.wearables.registrationSetupStatus == .success || model.metaBlocked
                         ) {
                             model.connectMetaAI()
-                        }
-
-                        if model.wearables.needsFinishConnection {
-                            Button {
-                                model.finishMetaConnection()
-                            } label: {
-                                Label("Finish Connection (sideload fallback)", systemImage: "arrow.uturn.backward.circle.fill")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.orange)
-
-                            if !model.wearables.registrationLabel.isEmpty {
-                                Text(model.wearables.registrationLabel)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Text("SDK state: \(model.wearables.registrationStateName)")
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
                         }
 
                         MetaSetupStepView(
@@ -338,11 +334,16 @@ struct ContentView: View {
                             isSuccess: model.wearables.cameraSetupStatus == .success,
                             buttonTitle: "Allow Camera",
                             buttonIcon: "camera.badge.ellipsis",
-                            hint: "Approve camera access in Meta AI, then return here. Next unlocks when allowed.",
+                            hint: "Approve camera access in Meta AI, then return here.",
                             disabled: model.metaBlocked || model.wearables.cameraSetupStatus == .success
                         ) {
                             model.allowGlassesCamera()
                         }
+
+                        Button("Run Meta diagnostics") {
+                            Task { await model.wearables.runWearablesDiagnostics() }
+                        }
+                        .font(.footnote)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
@@ -388,6 +389,7 @@ struct ContentView: View {
             .onAppear {
                 model.refreshMetaInstallState()
                 model.configureWearables(configError: configureError)
+                model.wearables.startRegistrationMonitoring()
                 model.start()
             }
             .onChange(of: scenePhase) { _, phase in
