@@ -15,6 +15,8 @@ window.CASTER_CONFIG = {
   // See deploy-server.html
   SIGNALING_URL: 'wss://meta-display-view-caster.onrender.com',
 
+  VIEWER_PASSWORD: 'Wedding',
+
   GLASSES_APP_URL: 'https://flsourcing.github.io/Meta-Display-View-Caster/glasses.html',
   GLASSES_APP_NAME: 'ViewCaster',
 

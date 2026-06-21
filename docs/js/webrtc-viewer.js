@@ -10,7 +10,7 @@
     return pc;
   }
 
-  function bindIce(pc, ws) {
+  function bindIce(pc, ws, viewerId) {
     pc.onicecandidate = (e) => {
       if (!e.candidate) return;
       CasterWS.send(ws, {
@@ -18,6 +18,7 @@
         candidate: e.candidate.candidate,
         sdpMLineIndex: e.candidate.sdpMLineIndex,
         sdpMid: e.candidate.sdpMid,
+        viewerId,
       });
     };
   }
@@ -31,11 +32,11 @@
     });
   }
 
-  async function handleOffer(pc, ws, msg) {
+  async function handleOffer(pc, ws, msg, viewerId) {
     await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp });
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    CasterWS.send(ws, { type: 'answer', sdp: answer.sdp, target: 'relay' });
+    CasterWS.send(ws, { type: 'answer', sdp: answer.sdp, viewerId });
   }
 
   window.CasterWebRTCViewer = { createPeerConnection, bindIce, handleRemoteIce, handleOffer };

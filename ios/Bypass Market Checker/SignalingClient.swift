@@ -7,6 +7,7 @@ final class SignalingClient: ObservableObject {
     @Published var connected = false
     @Published var desktopLinked = false
     @Published var glassesLinked = false
+    @Published var viewerCount = 0
 
     private var ws: URLSessionWebSocketTask?
     private var session: URLSession?
@@ -24,11 +25,13 @@ final class SignalingClient: ObservableObject {
 
     var onStartStream: (() -> Void)?
     var onStopStream: (() -> Void)?
-    var onAnswer: ((String) -> Void)?
-    var onIceCandidate: ((String, Int32, String?) -> Void)?
+    var onAnswer: ((String, String) -> Void)?
+    var onIceCandidate: ((String, Int32, String?, String) -> Void)?
     var onGlassesJoined: (() -> Void)?
     var onGlassesLeft: (() -> Void)?
     var onDesktopJoined: (() -> Void)?
+    var onViewerJoined: ((String) -> Void)?
+    var onViewerLeft: ((String) -> Void)?
 
     init(serverURL: URL) {
         self.serverURL = serverURL
@@ -50,6 +53,7 @@ final class SignalingClient: ObservableObject {
         connected = false
         desktopLinked = false
         glassesLinked = false
+        viewerCount = 0
         status = "Offline"
     }
 
@@ -75,19 +79,20 @@ final class SignalingClient: ObservableObject {
         send(body)
     }
 
-    func sendOffer(_ sdp: String) {
+    func sendOffer(_ sdp: String, viewerId: String) {
+        sendSignal(type: "offer", payload: ["sdp": sdp, "target": "viewer", "viewerId": viewerId])
+    }
+
+    func sendOfferToLegacyDesktop(_ sdp: String) {
         sendSignal(type: "offer", payload: ["sdp": sdp, "target": "desktop"])
     }
 
-    func sendAnswer(_ sdp: String) {
-        sendSignal(type: "answer", payload: ["sdp": sdp, "target": "desktop"])
-    }
-
-    func sendIceCandidate(_ candidate: String, sdpMLineIndex: Int32, sdpMid: String?) {
+    func sendIceCandidate(_ candidate: String, sdpMLineIndex: Int32, sdpMid: String?, viewerId: String) {
         sendSignal(type: "ice-candidate", payload: [
             "candidate": candidate,
             "sdpMLineIndex": sdpMLineIndex,
             "sdpMid": sdpMid ?? "",
+            "viewerId": viewerId,
         ])
     }
 
@@ -229,8 +234,22 @@ final class SignalingClient: ObservableObject {
             status = "Phone relay back online"
         case "desktop-joined":
             desktopLinked = true
-            status = "Desktop connected"
+            status = "Viewer connected"
             onDesktopJoined?()
+        case "viewer-joined":
+            if let vid = json["viewerId"] as? String {
+                desktopLinked = true
+                viewerCount = json["viewerCount"] as? Int ?? viewerCount + 1
+                status = viewerCount == 1 ? "Viewer connected" : "\(viewerCount) viewers connected"
+                onViewerJoined?(vid)
+            }
+        case "viewer-left":
+            if let vid = json["viewerId"] as? String {
+                viewerCount = json["viewerCount"] as? Int ?? max(0, viewerCount - 1)
+                onViewerLeft?(vid)
+                desktopLinked = viewerCount > 0
+                status = viewerCount > 0 ? "\(viewerCount) viewers connected" : "Waiting for viewers"
+            }
         case "glasses-joined":
             glassesLinked = true
             status = desktopLinked ? "Desktop & glasses linked" : "Glasses connected"
@@ -246,12 +265,16 @@ final class SignalingClient: ObservableObject {
         case "stop-stream":
             onStopStream?()
         case "answer":
-            if let sdp = json["sdp"] as? String { onAnswer?(sdp) }
+            if let sdp = json["sdp"] as? String {
+                let viewerId = json["viewerId"] as? String ?? "legacy-desktop"
+                onAnswer?(sdp, viewerId)
+            }
         case "ice-candidate":
             if let c = json["candidate"] as? String {
                 let idx = json["sdpMLineIndex"] as? Int32 ?? 0
                 let mid = json["sdpMid"] as? String
-                onIceCandidate?(c, idx, mid)
+                let viewerId = json["viewerId"] as? String ?? "legacy-desktop"
+                onIceCandidate?(c, idx, mid, viewerId)
             }
         case "error":
             status = json["message"] as? String ?? "Error"

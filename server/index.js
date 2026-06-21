@@ -7,6 +7,7 @@ import { randomInt, randomUUID } from 'crypto';
 const PORT = process.env.PORT || 8080;
 const CODE_ROTATION_MS = 300_000;
 const RELAY_GRACE_MS = 900_000;
+const VIEWER_PASSWORD = process.env.VIEWER_PASSWORD || 'Wedding';
 
 const app = express();
 app.use(cors());
@@ -40,13 +41,16 @@ function sessionPayload(session) {
     code: session.code,
     expiresIn: Math.max(0, session.codeExpiresAt - Date.now()),
     relayOnline: !!session.relayWs,
-    desktopOnline: !!session.desktopWs,
+    desktopOnline: !!session.desktopWs || session.viewers.size > 0,
     glassesOnline: !!session.glassesWs,
+    streaming: !!session.streaming,
+    viewerCount: session.viewers.size,
   };
 }
 
 function broadcast(session, payload, except = null) {
-  for (const ws of [session.relayWs, session.glassesWs, session.desktopWs]) {
+  const targets = [session.relayWs, session.glassesWs, session.desktopWs, ...session.viewers.values()];
+  for (const ws of targets) {
     if (ws && ws !== except) send(ws, payload);
   }
 }
@@ -67,6 +71,16 @@ function findSessionByCode(code) {
   return sid ? sessions.get(sid) : null;
 }
 
+function findViewableSession() {
+  for (const session of sessions.values()) {
+    if (session.relayWs && session.streaming) return session;
+  }
+  for (const session of sessions.values()) {
+    if (session.relayWs) return session;
+  }
+  return null;
+}
+
 function joinError(session, code) {
   if (!session) {
     return 'Code not found. Open the phone app, wait for a 6-digit code, then enter it here.';
@@ -77,8 +91,25 @@ function joinError(session, code) {
   return null;
 }
 
+function removeViewer(session, viewerId) {
+  if (!viewerId) return;
+  session.viewers.delete(viewerId);
+  if (session.relayWs) {
+    send(session.relayWs, { type: 'viewer-left', viewerId, viewerCount: session.viewers.size });
+  }
+}
+
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', sessions: sessions.size, uptime: process.uptime() });
+});
+
+app.get('/live-status', (_req, res) => {
+  const session = findViewableSession();
+  res.json({
+    relayOnline: !!session?.relayWs,
+    streaming: !!session?.streaming,
+    viewerCount: session?.viewers.size ?? 0,
+  });
 });
 
 const httpServer = createServer(app);
@@ -87,6 +118,7 @@ const wss = new WebSocketServer({ server: httpServer });
 wss.on('connection', (ws) => {
   let role = null;
   let sessionId = null;
+  let viewerId = null;
 
   ws.on('message', (raw) => {
     let msg;
@@ -102,6 +134,7 @@ wss.on('connection', (ws) => {
         let session = reconnectId ? getSession(reconnectId) : null;
 
         if (session) {
+          if (!session.viewers) session.viewers = new Map();
           session.relayWs = ws;
           session.relayDetachedAt = 0;
           sessionId = session.sessionId;
@@ -117,9 +150,11 @@ wss.on('connection', (ws) => {
             relayWs: ws,
             glassesWs: null,
             desktopWs: null,
+            viewers: new Map(),
             code: '',
             codeExpiresAt: 0,
             relayDetachedAt: 0,
+            streaming: false,
           };
           rotateCode(session);
           sessions.set(sessionId, session);
@@ -128,6 +163,9 @@ wss.on('connection', (ws) => {
         send(ws, { type: 'relay-registered', role: 'relay', sessionId, ...sessionPayload(session) });
         if (session.glassesWs) {
           send(session.glassesWs, { type: 'relay-online', ...sessionPayload(session) });
+        }
+        for (const vws of session.viewers.values()) {
+          send(vws, { type: 'relay-online', ...sessionPayload(session) });
         }
         if (session.desktopWs) {
           send(session.desktopWs, { type: 'relay-online', ...sessionPayload(session) });
@@ -150,9 +188,42 @@ wss.on('connection', (ws) => {
         if (session.relayWs) {
           send(session.relayWs, { type: 'glasses-joined', ...sessionPayload(session) });
         }
+        for (const vws of session.viewers.values()) {
+          send(vws, { type: 'glasses-joined', ...sessionPayload(session) });
+        }
         if (session.desktopWs) {
           send(session.desktopWs, { type: 'glasses-joined', ...sessionPayload(session) });
         }
+        break;
+      }
+
+      case 'join-viewer': {
+        role = 'viewer';
+        const password = String(msg.password || '').trim();
+        if (password !== VIEWER_PASSWORD) {
+          send(ws, { type: 'error', message: 'Wrong password.' });
+          return;
+        }
+        const session = findViewableSession();
+        if (!session?.relayWs) {
+          send(ws, { type: 'error', message: 'No cast active yet — keep View Caster open on the phone.' });
+          return;
+        }
+        viewerId = randomUUID();
+        session.viewers.set(viewerId, ws);
+        sessionId = session.sessionId;
+        send(ws, {
+          type: 'viewer-ack',
+          role: 'viewer',
+          viewerId,
+          ...sessionPayload(session),
+        });
+        send(session.relayWs, {
+          type: 'viewer-joined',
+          viewerId,
+          viewerCount: session.viewers.size,
+          streaming: session.streaming,
+        });
         break;
       }
 
@@ -194,19 +265,86 @@ wss.on('connection', (ws) => {
         break;
       }
 
-      case 'stop-stream':
+      case 'stop-stream': {
+        const session = getSession(sessionId);
+        if (session) session.streaming = false;
+        const s = getSession(sessionId);
+        if (!s) {
+          send(ws, { type: 'error', message: 'Not in a session.' });
+          return;
+        }
+        broadcast(s, msg, ws);
+        break;
+      }
+
       case 'stream-starting':
-      case 'stream-started':
-      case 'stream-error':
-      case 'offer':
-      case 'answer':
-      case 'ice-candidate': {
+      case 'stream-error': {
         const session = getSession(sessionId);
         if (!session) {
           send(ws, { type: 'error', message: 'Not in a session.' });
           return;
         }
         broadcast(session, msg, ws);
+        break;
+      }
+
+      case 'stream-started': {
+        const session = getSession(sessionId);
+        if (session) session.streaming = true;
+        const s = getSession(sessionId);
+        if (!s) {
+          send(ws, { type: 'error', message: 'Not in a session.' });
+          return;
+        }
+        broadcast(s, msg, ws);
+        break;
+      }
+
+      case 'offer': {
+        const session = getSession(sessionId);
+        if (!session) {
+          send(ws, { type: 'error', message: 'Not in a session.' });
+          return;
+        }
+        const targetViewer = msg.viewerId;
+        if (targetViewer && session.viewers.has(targetViewer)) {
+          send(session.viewers.get(targetViewer), msg);
+        } else if (session.desktopWs) {
+          send(session.desktopWs, msg);
+        } else {
+          for (const vws of session.viewers.values()) send(vws, msg);
+        }
+        break;
+      }
+
+      case 'answer': {
+        const session = getSession(sessionId);
+        if (!session?.relayWs) {
+          send(ws, { type: 'error', message: 'Not in a session.' });
+          return;
+        }
+        send(session.relayWs, msg);
+        break;
+      }
+
+      case 'ice-candidate': {
+        const session = getSession(sessionId);
+        if (!session) {
+          send(ws, { type: 'error', message: 'Not in a session.' });
+          return;
+        }
+        if (role === 'relay') {
+          const targetViewer = msg.viewerId;
+          if (targetViewer && session.viewers.has(targetViewer)) {
+            send(session.viewers.get(targetViewer), msg);
+          } else if (session.desktopWs) {
+            send(session.desktopWs, msg);
+          } else {
+            for (const vws of session.viewers.values()) send(vws, msg);
+          }
+        } else if (session.relayWs) {
+          send(session.relayWs, msg);
+        }
         break;
       }
 
@@ -223,6 +361,7 @@ wss.on('connection', (ws) => {
     if (role === 'relay') {
       session.relayWs = null;
       session.relayDetachedAt = Date.now();
+      session.streaming = false;
       broadcast(session, { type: 'relay-offline', message: 'Phone relay paused — reopen the phone app.' }, ws);
     } else if (role === 'glasses') {
       session.glassesWs = null;
@@ -230,6 +369,8 @@ wss.on('connection', (ws) => {
     } else if (role === 'desktop') {
       session.desktopWs = null;
       broadcast(session, { type: 'desktop-left' }, ws);
+    } else if (role === 'viewer' && viewerId) {
+      removeViewer(session, viewerId);
     }
   });
 });
@@ -238,7 +379,7 @@ setInterval(() => {
   const now = Date.now();
   for (const [sessionId, session] of sessions.entries()) {
     const relayGone = !session.relayWs;
-    const idle = !session.desktopWs && !session.glassesWs;
+    const idle = !session.desktopWs && !session.glassesWs && session.viewers.size === 0;
 
     if (relayGone && session.relayDetachedAt && now - session.relayDetachedAt > RELAY_GRACE_MS && idle) {
       cleanupSession(sessionId);

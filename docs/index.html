@@ -2,29 +2,29 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Meta Display View Caster</title>
-  <link rel="stylesheet" href="css/style.css?v=25">
+  <link rel="stylesheet" href="css/style.css?v=30">
 </head>
 <body>
   <div class="container">
     <header>
       <h1>Meta Display View Caster</h1>
-      <p>Enter the code from the <strong>Meta Display View Caster</strong> app on your phone, then click Connect.</p>
+      <p id="header-sub">Enter password to watch the live stream — works on phone or desktop.</p>
     </header>
 
     <section id="connect-section">
       <div class="card">
-        <label for="code-input">Pairing code</label>
-        <input id="code-input" type="text" inputmode="numeric" maxlength="6" placeholder="000000">
-        <button id="connect-btn" class="btn btn-primary" type="button">Connect</button>
+        <label for="password-input">Viewer password</label>
+        <input id="password-input" type="password" autocomplete="off" placeholder="Password">
+        <button id="connect-btn" class="btn btn-primary" type="button">Watch live</button>
         <p id="error-msg" class="message" role="alert"></p>
       </div>
       <div class="card" style="margin-top:1rem;">
         <div id="status" class="status waiting">
           <span class="status-dot"></span>
-          <span id="status-text">Enter code from phone relay</span>
+          <span id="status-text">Connecting automatically…</span>
         </div>
       </div>
     </section>
@@ -33,30 +33,29 @@
       <div class="card">
         <div id="status-viewer" class="status connected">
           <span class="status-dot"></span>
-          <span>Connected to glasses</span>
+          <span>Waiting for live stream…</span>
         </div>
         <div class="video-wrap">
           <video id="remote-video" autoplay playsinline muted></video>
           <div id="video-placeholder" class="video-placeholder">Waiting for Live Stream from glasses…</div>
         </div>
+        <button id="unmute-btn" class="btn btn-secondary" type="button" style="margin-top:1rem;width:100%;">Tap for sound</button>
         <p id="capture-hint" class="message" style="margin-top:1rem;"></p>
       </div>
     </section>
   </div>
 
   <footer>
-    <strong>Phone:</strong> <a href="install.html">install profile</a> ·
-    <a href="deploy-server.html">deploy server</a> (one-time) ·
-    <strong>Step 1:</strong> code on phone ·
-    <strong>Step 2:</strong> connect here ·
-    <strong>Step 3:</strong> <a href="glasses.html">glasses</a> (Meta Display only)
+    <strong>Casting:</strong> <a href="glasses.html">glasses</a> ·
+    <a href="install.html">install app</a> ·
+    Password: <strong>Wedding</strong>
   </footer>
 
-  <script src="js/ws-signaling.js?v=25"></script>
-  <script src="js/webrtc-viewer.js?v=25"></script>
-  <script src="js/peerjs.min.js?v=25"></script>
-  <script src="config.js?v=25"></script>
-  <script src="js/signaling.js?v=25"></script>
-  <script src="js/desktop.js?v=25"></script>
+  <script src="js/ws-signaling.js?v=30"></script>
+  <script src="js/webrtc-viewer.js?v=30"></script>
+  <script src="js/peerjs.min.js?v=30"></script>
+  <script src="config.js?v=30"></script>
+  <script src="js/signaling.js?v=30"></script>
+  <script src="js/desktop.js?v=30"></script>
 </body>
 </html>

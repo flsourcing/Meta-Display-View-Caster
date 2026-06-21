@@ -94,6 +94,11 @@ struct CastHomeView: View {
                     .font(.caption.monospaced())
                     .foregroundStyle(.cyan.opacity(0.9))
                     .textSelection(.enabled)
+
+                Text("Guests watch at flsourcing.github.io/Meta-Display-View-Caster — password Wedding")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .padding(.top, 4)
             }
             .padding(12)
             .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))

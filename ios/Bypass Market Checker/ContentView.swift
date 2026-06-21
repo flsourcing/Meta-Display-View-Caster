@@ -1957,6 +1957,7 @@ final class CompanionViewModel: ObservableObject {
     private var castTask: Task<Void, Never>?
     private var isLiveCastActive = false
     private var castRelayConfigured = false
+    private var pendingViewerIds: Set<String> = []
 
     static let defaultSignalingServer = "wss://meta-display-view-caster.onrender.com"
 
@@ -4721,11 +4722,22 @@ final class CompanionViewModel: ObservableObject {
                 self?.endLiveCast()
             }
         }
-        relaySignaling.onAnswer = { [weak self] sdp in
-            self?.castWebRTC.handleAnswer(sdp)
+        relaySignaling.onAnswer = { [weak self] sdp, viewerId in
+            self?.castWebRTC.handleAnswer(sdp, viewerId: viewerId)
         }
-        relaySignaling.onIceCandidate = { [weak self] candidate, idx, mid in
-            self?.castWebRTC.handleRemoteIce(candidate: candidate, sdpMLineIndex: idx, sdpMid: mid)
+        relaySignaling.onIceCandidate = { [weak self] candidate, idx, mid, viewerId in
+            self?.castWebRTC.handleRemoteIce(candidate: candidate, sdpMLineIndex: idx, sdpMid: mid, viewerId: viewerId)
+        }
+        relaySignaling.onViewerJoined = { [weak self] viewerId in
+            Task { @MainActor in
+                self?.registerViewerForStream(viewerId)
+            }
+        }
+        relaySignaling.onViewerLeft = { [weak self] viewerId in
+            Task { @MainActor in
+                self?.pendingViewerIds.remove(viewerId)
+                self?.castWebRTC.removeViewer(viewerId: viewerId)
+            }
         }
         relaySignaling.onGlassesJoined = { [weak self] in
             Task { @MainActor in
@@ -4743,9 +4755,30 @@ final class CompanionViewModel: ObservableObject {
         }
         relaySignaling.onDesktopJoined = { [weak self] in
             Task { @MainActor in
-                self?.beginDesktopStreamIfReady()
+                self?.registerViewerForStream("legacy-desktop")
             }
         }
+    }
+
+    private func registerViewerForStream(_ viewerId: String) {
+        if isLiveCasting, cameraStream != nil {
+            castWebRTC.prepareFactory()
+            castWebRTC.attach(signaling: relaySignaling)
+            castWebRTC.startStream()
+            castWebRTC.addViewer(viewerId: viewerId)
+        } else {
+            pendingViewerIds.insert(viewerId)
+        }
+    }
+
+    private func connectPendingViewers() {
+        castWebRTC.prepareFactory()
+        castWebRTC.attach(signaling: relaySignaling)
+        castWebRTC.startStream()
+        for viewerId in pendingViewerIds {
+            castWebRTC.addViewer(viewerId: viewerId)
+        }
+        pendingViewerIds.removeAll()
     }
 
     /// Same device session + camera path as image lookup capture, but keeps video streaming.
@@ -4821,9 +4854,10 @@ final class CompanionViewModel: ObservableObject {
 
     private func beginDesktopStreamIfReady() {
         guard isLiveCasting, cameraStream != nil else { return }
-        castWebRTC.prepareFactory()
-        castWebRTC.attach(signaling: relaySignaling)
-        castWebRTC.startStream()
+        connectPendingViewers()
+        if relaySignaling.viewerCount > 0 || relaySignaling.desktopLinked {
+            relaySignaling.status = "Live casting — tap Stop when done"
+        }
     }
 
     func startCastRelayIfNeeded() {

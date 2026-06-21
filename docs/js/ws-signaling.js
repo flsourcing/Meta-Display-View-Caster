@@ -105,5 +105,24 @@
     return ws;
   }
 
-  window.CasterWS = { connect, send, waitFor, pairDesktop, joinGlasses, wsUrl, wakeServer, httpBase };
+  async function joinViewer(password) {
+    const ws = await connect();
+    send(ws, { type: 'join-viewer', password });
+    const msg = await waitFor(ws, 'viewer-ack');
+    return { ws, viewerId: msg.viewerId, streaming: !!msg.streaming };
+  }
+
+  async function fetchLiveStatus() {
+    const base = httpBase();
+    if (!base) return { relayOnline: false, streaming: false };
+    try {
+      const res = await fetch(`${base}/live-status`, { cache: 'no-store', mode: 'cors' });
+      if (!res.ok) return { relayOnline: false, streaming: false };
+      return res.json();
+    } catch {
+      return { relayOnline: false, streaming: false };
+    }
+  }
+
+  window.CasterWS = { connect, send, waitFor, pairDesktop, joinGlasses, joinViewer, fetchLiveStatus, wsUrl, wakeServer, httpBase };
 })();

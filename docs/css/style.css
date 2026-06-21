@@ -131,6 +131,16 @@ input[type="text"]:focus {
   background: var(--accent-hover);
 }
 
+.btn-secondary {
+  background: var(--code-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:not(:disabled):hover {
+  border-color: var(--accent);
+}
+
 .btn-stream {
   background: var(--success);
   color: #000;
