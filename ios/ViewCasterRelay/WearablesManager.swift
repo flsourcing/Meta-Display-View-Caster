@@ -36,6 +36,8 @@ final class WearablesManager: ObservableObject {
     private var lastHandledURLString: String?
     private var foregroundSyncTask: Task<Void, Never>?
     private var didConfigure = false
+    private var pendingFinishAfterManualReturn = false
+    private var isFinishingRegistration = false
 
     var onVideoFrame: ((VideoFrame) -> Void)?
 
@@ -347,6 +349,10 @@ final class WearablesManager: ObservableObject {
         cameraLabel = "Waiting for approval..."
     }
 
+    var needsFinishConnection: Bool {
+        registrationSetupStatus != .success && (metaSetupStarted || registrationAttempted)
+    }
+
     func connectMetaAI() {
         guard !sdkRegistered else {
             registrationLabel = "Registered with Meta AI."
@@ -354,16 +360,18 @@ final class WearablesManager: ObservableObject {
             return
         }
         registrationAttempted = true
+        pendingFinishAfterManualReturn = true
         Task { @MainActor in
             do {
                 registrationLabel = "Opening Meta AI registration..."
                 registrationOpenedAt = Date()
                 try await sdk.startRegistration()
                 markMetaSetupStarted()
-                registrationLabel = "Opened Meta AI registration. Return here after approving."
+                registrationLabel = "Connect in Meta AI, then return here and tap Finish Connection."
                 unlockCameraStepIfNeeded()
             } catch RegistrationError.alreadyRegistered {
                 registrationOpenedAt = nil
+                pendingFinishAfterManualReturn = false
                 registrationLabel = "Registered with Meta AI."
                 _ = await waitForRegistrationReady(timeoutSeconds: 10)
                 applyRegistrationState(sdk.registrationState)
@@ -374,6 +382,44 @@ final class WearablesManager: ObservableObject {
                 lastMetaSyncNote = unavailableHelp(state: sdk.registrationState)
                 unlockCameraStepIfNeeded()
             }
+        }
+    }
+
+    /// After Connect in Meta AI, sideloaded apps often miss the auto-redirect.
+    /// Opens Meta AI developer connections so the user can tap View Caster Relay → triggers viewcaster:// callback.
+    func finishRegistrationConnection() async {
+        guard registrationSetupStatus != .success else { return }
+        guard !isFinishingRegistration else { return }
+        isFinishingRegistration = true
+        defer { isFinishingRegistration = false }
+
+        ensureMetaSDKReady()
+        registrationAttempted = true
+        registrationLabel = "Opening Meta AI to finish connection…"
+
+        do {
+            try await sdk.openDATGlassesAppUpdate()
+            registrationLabel = "In Meta AI, tap View Caster Relay to open this app."
+        } catch {
+            NSLog("ViewCaster: openDATGlassesAppUpdate failed: \(error.localizedDescription)")
+            registrationLabel = "Re-opening Meta AI registration…"
+            do {
+                try await sdk.startRegistration()
+            } catch RegistrationError.alreadyRegistered {
+                _ = await waitForRegistrationReady(timeoutSeconds: 15)
+            } catch {
+                NSLog("ViewCaster: startRegistration retry failed: \(error.localizedDescription)")
+            }
+        }
+
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        _ = await waitForRegistrationReady(timeoutSeconds: 25)
+        _ = await ensureRegistrationComplete()
+        refreshSetupProgress()
+
+        if registrationSetupStatus == .success {
+            pendingFinishAfterManualReturn = false
+            registrationOpenedAt = nil
         }
     }
 
@@ -424,7 +470,13 @@ final class WearablesManager: ObservableObject {
         foregroundSyncTask?.cancel()
         foregroundSyncTask = Task { @MainActor in
             unlockCameraStepIfNeeded()
-            _ = await ensureRegistrationComplete()
+
+            if pendingFinishAfterManualReturn && registrationSetupStatus != .success {
+                pendingFinishAfterManualReturn = false
+                await finishRegistrationConnection()
+            } else {
+                _ = await ensureRegistrationComplete()
+            }
             refreshSetupProgress()
 
             if pendingCameraPermissionRetry {
@@ -468,6 +520,17 @@ final class WearablesManager: ObservableObject {
 
         let currentState = sdk.registrationState
         if currentState == .available, registrationAttempted || metaSetupStarted {
+            do {
+                try await sdk.openDATGlassesAppUpdate()
+                registrationLabel = "In Meta AI, tap View Caster Relay to finish."
+                if await waitForRegistrationReady(timeoutSeconds: 20) {
+                    registrationOpenedAt = nil
+                    refreshSetupProgress()
+                    return true
+                }
+            } catch {
+                NSLog("ViewCaster: ensureRegistration openDAT failed: \(error.localizedDescription)")
+            }
             do {
                 try await sdk.startRegistration()
                 registrationLabel = "Complete registration in Meta AI, then return here."

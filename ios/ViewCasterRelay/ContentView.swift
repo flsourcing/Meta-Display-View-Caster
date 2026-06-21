@@ -134,6 +134,13 @@ final class RelayViewModel: ObservableObject {
         }
     }
 
+    func finishMetaConnection() {
+        metaHint = ""
+        Task {
+            await wearables.finishRegistrationConnection()
+        }
+    }
+
     func handleMetaCallback(_ url: URL) async {
         await wearables.handleCallback(url)
     }
@@ -298,10 +305,27 @@ struct ContentView: View {
                             isSuccess: model.wearables.registrationSetupStatus == .success,
                             buttonTitle: "Register With Meta AI",
                             buttonIcon: "link",
-                            hint: "Toggle ON and tap Connect in Meta AI. Let it return you here automatically — do not use the back button.",
+                            hint: "1) Toggle ON → Connect in Meta AI. 2) Switch back here. 3) Tap Finish Connection — Meta won't auto-return for sideloaded apps.",
                             disabled: model.wearables.registrationSetupStatus == .success || model.metaBlocked
                         ) {
                             model.connectMetaAI()
+                        }
+
+                        if model.wearables.needsFinishConnection {
+                            Button {
+                                model.finishMetaConnection()
+                            } label: {
+                                Label("Finish Connection", systemImage: "arrow.uturn.backward.circle.fill")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.orange)
+
+                            if !model.wearables.registrationLabel.isEmpty {
+                                Text(model.wearables.registrationLabel)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
 
                         MetaSetupStepView(
