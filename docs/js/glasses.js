@@ -32,7 +32,7 @@
   let lastKeyAction = { key: '', at: 0 };
 
   if (els.versionLabel) {
-    els.versionLabel.textContent = useWS ? 'ws' : `v${CasterSignaling.APP_VERSION}`;
+    els.versionLabel.textContent = useWS ? 'ws-v28' : `v${CasterSignaling.APP_VERSION}`;
   }
 
   function setStatus(kind, text) {
@@ -85,7 +85,7 @@
     els.connectedView.classList.remove('hidden');
     els.connectedLabel.textContent = 'Ready';
     if (els.sessionCode) els.sessionCode.textContent = digits;
-    els.streamHint.textContent = 'Press Enter on Live Stream to cast to desktop.';
+    els.streamHint.textContent = 'Keep View Caster open on phone, then press Enter on Live Stream.';
     setStatus('connected', 'Ready');
     els.streamBtn.focus();
   }
@@ -96,13 +96,14 @@
         streaming = true;
         els.streamBtn.textContent = 'Stop Stream';
         els.streamBtn.classList.add('active');
-        els.streamHint.textContent = 'Casting…';
+        els.streamHint.textContent = 'Casting live POV to desktop…';
+        setStatus('connected', 'Casting');
       }
       if (msg?.type === 'stream-error') {
         streaming = false;
         els.streamBtn.textContent = 'Live Stream';
         els.streamBtn.classList.remove('active');
-        const errText = msg.message || 'Stream failed on phone — check View Caster app.';
+        const errText = msg.message || 'Stream failed — keep View Caster open on phone and tap Prepare Glasses first.';
         els.streamHint.textContent = errText;
         setStatus('error', errText);
       }
@@ -111,6 +112,7 @@
         els.streamBtn.textContent = 'Live Stream';
         els.streamBtn.classList.remove('active');
         els.streamHint.textContent = 'Press Enter on Live Stream to cast again.';
+        setStatus('connected', 'Ready');
       }
     };
 
@@ -157,29 +159,6 @@
     }
   }
 
-  function openPhoneCompanion() {
-    const urls = [
-      'bypassmarketchecker://cast/start',
-      'bypassmarketchecker://start',
-      'bypassmarketchecker://',
-    ];
-    for (const url of urls) {
-      try {
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.src = url;
-        document.body.appendChild(iframe);
-        window.setTimeout(() => iframe.remove(), 1500);
-        const a = document.createElement('a');
-        a.href = url;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      } catch (_) { /* ignore */ }
-    }
-  }
-
   function toggleStream() {
     if (!connected) return;
     if (isDuplicateKey('stream')) return;
@@ -190,14 +169,12 @@
       streaming = false;
       els.streamBtn.textContent = 'Live Stream';
       els.streamBtn.classList.remove('active');
+      els.streamHint.textContent = 'Press Enter on Live Stream to cast again.';
     } else {
-      openPhoneCompanion();
-      els.streamHint.textContent = 'Opening phone app…';
-      setStatus('waiting', 'Starting on phone…');
-      window.setTimeout(() => {
-        if (useWS) CasterWS.send(ws, { type: 'start-stream' });
-        else CasterSignaling.sendData(dataConn, { type: 'start-stream' });
-      }, 1500);
+      els.streamHint.textContent = 'Starting camera on phone…';
+      setStatus('waiting', 'Starting camera…');
+      if (useWS) CasterWS.send(ws, { type: 'start-stream' });
+      else CasterSignaling.sendData(dataConn, { type: 'start-stream' });
     }
   }
 

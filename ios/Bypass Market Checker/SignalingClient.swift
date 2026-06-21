@@ -28,6 +28,7 @@ final class SignalingClient: ObservableObject {
     var onIceCandidate: ((String, Int32, String?) -> Void)?
     var onGlassesJoined: (() -> Void)?
     var onGlassesLeft: (() -> Void)?
+    var onDesktopJoined: (() -> Void)?
 
     init(serverURL: URL) {
         self.serverURL = serverURL
@@ -229,6 +230,7 @@ final class SignalingClient: ObservableObject {
         case "desktop-joined":
             desktopLinked = true
             status = "Desktop connected"
+            onDesktopJoined?()
         case "glasses-joined":
             glassesLinked = true
             status = desktopLinked ? "Desktop & glasses linked" : "Glasses connected"

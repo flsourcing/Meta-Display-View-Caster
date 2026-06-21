@@ -106,7 +106,7 @@ struct CastHomeView: View {
             }
             .buttonStyle(SecondaryButtonStyle())
 
-            Text("1. Tap Prepare Glasses (keep View Caster open on phone)\n2. Enter code on desktop & glasses\n3. Live Stream on glasses opens this app and starts camera\n4. Tap Stop Live Cast here when done")
+            Text("1. Tap Prepare Glasses (arms connection like image lookup)\n2. Keep View Caster open on phone\n3. Enter code on desktop & glasses\n4. Live Stream starts camera on phone → desktop gets video when connected\n5. Tap Stop Live Cast when done")
                 .font(.footnote)
                 .foregroundStyle(.white.opacity(0.65))
         }

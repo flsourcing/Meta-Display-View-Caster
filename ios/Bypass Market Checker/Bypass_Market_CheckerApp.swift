@@ -5,13 +5,12 @@ private func handleCastDeepLink(_ url: URL) -> Bool {
     guard url.scheme?.lowercased() == "bypassmarketchecker" else { return false }
     let host = url.host?.lowercased() ?? ""
     let path = url.path.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-    let combined = "\(host)/\(path)"
 
-    if combined.contains("stop") || path == "stop" || host == "stop" {
+    if (host == "cast" && path == "stop") || path == "cast/stop" {
         NotificationCenter.default.post(name: .castStopRequested, object: nil)
         return true
     }
-    if combined.contains("start") || path == "start" || host == "start" || host == "cast" {
+    if (host == "cast" && path == "start") || path == "cast/start" {
         NotificationCenter.default.post(name: .castStartRequested, object: nil)
         return true
     }
