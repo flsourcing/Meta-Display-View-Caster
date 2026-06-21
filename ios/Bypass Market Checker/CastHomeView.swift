@@ -106,7 +106,7 @@ struct CastHomeView: View {
             }
             .buttonStyle(SecondaryButtonStyle())
 
-            Text("1. Tap Prepare Glasses (Meta AI must be open)\n2. Enter code on desktop & glasses\n3. Live Stream on glasses jumps to this app and starts camera\n4. Tap Stop Live Cast here when done")
+            Text("1. Tap Prepare Glasses (keep View Caster open on phone)\n2. Enter code on desktop & glasses\n3. Live Stream on glasses opens this app and starts camera\n4. Tap Stop Live Cast here when done")
                 .font(.footnote)
                 .foregroundStyle(.white.opacity(0.65))
         }

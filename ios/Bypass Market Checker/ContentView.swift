@@ -2171,8 +2171,7 @@ final class CompanionViewModel: ObservableObject {
     private func wakeCastFromGlasses() {
         beginCompanionBackgroundTask()
         startCastCompanionBridge()
-        openMetaAIApp()
-        wearablesStatus = "Live Stream requested from glasses…"
+        wearablesStatus = "Live Stream from glasses — keep this app open…"
     }
 
     private func startCastSessionWarmupIfNeeded() {
@@ -4584,7 +4583,9 @@ final class CompanionViewModel: ObservableObject {
         cameraStream = stream
         await stream.start()
 
-        if quiet {
+        if isLiveCastActive {
+            wearablesStatus = "Glasses camera active — streaming to desktop…"
+        } else if quiet {
             restoreIdleWearablesStatus()
         } else {
             wearablesStatus = "Glasses stream started."
@@ -4772,18 +4773,16 @@ final class CompanionViewModel: ObservableObject {
         let prepTimeout: TimeInterval = triggeredByGlasses ? 90 : 60
         let streamTimeout: TimeInterval = triggeredByGlasses ? 45 : 30
 
-        openMetaAIApp()
-        try? await Task.sleep(nanoseconds: triggeredByGlasses ? 3_000_000_000 : 1_500_000_000)
-
         var ready = readyDeviceSession?.state == .started
         if !ready {
-            relaySignaling?.status = "Waiting for glasses…"
+            relaySignaling?.status = "Connecting to glasses…"
+            wearablesStatus = "Connecting to glasses — keep View Caster open on your phone…"
             beginCompanionBackgroundTask()
-            ready = await ensureReadyDeviceSession(showStatus: false, timeoutSeconds: prepTimeout)
+            ready = await ensureReadyDeviceSession(showStatus: true, timeoutSeconds: prepTimeout)
         }
         guard ready else {
             throw APIError(
-                message: "No eligible device available. Tap Prepare Glasses first, keep Meta AI open, then retry."
+                message: "No eligible device available. Tap Prepare Glasses first, then retry with View Caster in the foreground."
             )
         }
         glassesPreparedForCast = true
@@ -4794,15 +4793,16 @@ final class CompanionViewModel: ObservableObject {
 
         do {
             try await startGlassesStreamAttempt(
-                quiet: true,
+                quiet: false,
                 photoCaptureOnly: false,
                 deviceTimeoutSeconds: streamTimeout
             )
         } catch {
             if error.localizedDescription.localizedCaseInsensitiveContains("no eligible device")
-                || error.localizedDescription.localizedCaseInsensitiveContains("no dat device") {
+                || error.localizedDescription.localizedCaseInsensitiveContains("no dat device")
+                || error.localizedDescription.localizedCaseInsensitiveContains("camera capability") {
+                wearablesStatus = "Re-syncing with Meta AI, then retrying camera…"
                 openMetaAIApp()
-                wearablesStatus = "Re-syncing with Meta AI…"
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
                 readyDeviceSession = nil
                 glassesPreparedForCast = false
@@ -4811,7 +4811,7 @@ final class CompanionViewModel: ObservableObject {
                 }
                 glassesPreparedForCast = true
                 try await startGlassesStreamAttempt(
-                    quiet: true,
+                    quiet: false,
                     photoCaptureOnly: false,
                     deviceTimeoutSeconds: streamTimeout
                 )
@@ -4847,9 +4847,8 @@ final class CompanionViewModel: ObservableObject {
         defer { isBusy = false }
 
         configureCastRelay()
-        wearablesStatus = "Preparing glasses connection…"
+        wearablesStatus = "Preparing glasses — keep View Caster open on your phone…"
         relaySignaling?.status = "Preparing glasses…"
-        openMetaAIApp()
         startActiveDeviceMonitoring()
 
         let ready = await ensureReadyDeviceSession(showStatus: true, timeoutSeconds: 60)
@@ -4910,12 +4909,10 @@ final class CompanionViewModel: ObservableObject {
                 return
             }
 
-            openMetaAIApp()
-
             do {
                 relaySignaling.status = triggeredByGlasses
-                    ? "Live Stream from glasses — connecting…"
-                    : "Starting live cast…"
+                    ? "Live Stream from glasses — starting camera…"
+                    : "Starting glasses camera — keep this app open…"
                 beginCompanionBackgroundTask()
 
                 try await startGlassesStreamForLiveCast(triggeredByGlasses: triggeredByGlasses)
