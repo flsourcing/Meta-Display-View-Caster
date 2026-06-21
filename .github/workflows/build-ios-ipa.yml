@@ -42,18 +42,20 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             OTHER_SWIFT_FLAGS="-strict-concurrency=minimal"
 
-      - name: Inject Team ID into built app
+      - name: Inject MWDAT credentials into built app
         env:
           TEAM: ${{ github.event.inputs.team_id || 'JM52FT93Z2' }}
+          META_APP_ID: ${{ secrets.META_APP_ID || '974304118762997' }}
+          META_CLIENT_TOKEN: ${{ secrets.META_CLIENT_TOKEN || 'AR|974304118762997|80d303efb43a2a01cbbb6c730fde2f8d' }}
         run: |
           PLIST="ios/build/ViewCasterRelay.xcarchive/Products/Applications/ViewCasterRelay.app/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :MWDAT dict" "$PLIST" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Add :MWDAT:AppLinkURLScheme string 'viewcaster://'" "$PLIST" 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Set :MWDAT:AppLinkURLScheme 'viewcaster://'" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :MWDAT:MetaAppID string '0'" "$PLIST" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Set :MWDAT:MetaAppID '0'" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Delete :MWDAT:ClientToken" "$PLIST" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Delete :MWDAT:DAMEnabled" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :MWDAT:MetaAppID string '$META_APP_ID'" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :MWDAT:MetaAppID '$META_APP_ID'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :MWDAT:ClientToken string '$META_CLIENT_TOKEN'" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :MWDAT:ClientToken '$META_CLIENT_TOKEN'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :MWDAT:TeamID string '$TEAM'" "$PLIST" 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Set :MWDAT:TeamID '$TEAM'" "$PLIST"
           echo "MWDAT in built app:"
