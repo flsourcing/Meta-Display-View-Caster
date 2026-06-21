@@ -20,7 +20,7 @@ struct ViewCasterRelayApp: App {
         _model = StateObject(wrappedValue: vm)
         MetaAppDelegate.install { url in
             Task { @MainActor in
-                await vm.handleMetaCallback(url)
+                await vm.wearables.handleIncomingURL(url)
             }
         }
     }
@@ -29,9 +29,6 @@ struct ViewCasterRelayApp: App {
         WindowGroup {
             ContentView(configureError: configureError)
                 .environmentObject(model)
-                .onOpenURL { url in
-                    Task { await model.handleMetaCallback(url) }
-                }
         }
     }
 }

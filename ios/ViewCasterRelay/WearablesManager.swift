@@ -3,11 +3,18 @@ import UIKit
 import MWDATCamera
 import MWDATCore
 
+enum SetupItemStatus: Equatable {
+    case waiting
+    case success
+}
+
 /// Meta Wearables DAT — glasses camera registration, permissions, and live stream.
 @MainActor
 final class WearablesManager: ObservableObject {
     @Published private(set) var registrationLabel = "Waiting for connection..."
     @Published private(set) var cameraLabel = "Waiting for approval..."
+    @Published private(set) var registrationSetupStatus: SetupItemStatus = .waiting
+    @Published private(set) var cameraSetupStatus: SetupItemStatus = .waiting
     @Published private(set) var isRegistered = false
     @Published private(set) var cameraGranted = false
     @Published private(set) var isStreaming = false
@@ -24,6 +31,9 @@ final class WearablesManager: ObservableObject {
     private var registrationAttempted = false
     private var registrationOpenedAt: Date?
     private var pendingCameraPermissionRetry = false
+    private var urlHandledObserver: NSObjectProtocol?
+    private var lastHandledURL: String?
+    private var foregroundSyncTask: Task<Void, Never>?
 
     var onVideoFrame: ((VideoFrame) -> Void)?
 
@@ -66,15 +76,86 @@ final class WearablesManager: ObservableObject {
         sdkConfigureNote = configError ?? "SDK configured"
         deviceSelector = AutoDeviceSelector(wearables: sdk)
         applyRegistrationState(sdk.registrationState)
+        refreshSetupProgress()
         startObservers()
+        startRegistrationMonitoring()
         installForegroundObserver()
         Task { await onAppBecameActive() }
+    }
+
+    private func startRegistrationMonitoring() {
+        guard urlHandledObserver == nil else { return }
+
+        urlHandledObserver = NotificationCenter.default.addObserver(
+            forName: .wearablesURLHandled,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.registrationOpenedAt = nil
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                await self.onAppBecameActive()
+            }
+        }
+    }
+
+    func handleIncomingURL(_ url: URL) async {
+        let key = url.absoluteString
+        guard lastHandledURL != key else { return }
+        lastHandledURL = key
+
+        NSLog("ViewCaster: handleIncomingURL \(key)")
+        lastMetaCallback = key
+        do {
+            let handled = try await sdk.handleUrl(url)
+            if handled {
+                registrationOpenedAt = nil
+                NotificationCenter.default.post(name: .wearablesURLHandled, object: url)
+            }
+            applyRegistrationState(sdk.registrationState)
+            refreshSetupProgress()
+            _ = await ensureRegistrationComplete()
+            refreshSetupProgress()
+        } catch {
+            registrationLabel = "Meta callback error: \(error.localizedDescription)"
+            lastMetaSyncNote = "Callback error: \(error.localizedDescription)"
+        }
+    }
+
+    /// Backward-compatible entry for RelayViewModel.
+    func handleCallback(_ url: URL) async {
+        await handleIncomingURL(url)
+    }
+
+    private func refreshSetupProgress() {
+        if isRegistrationReady(sdk.registrationState) {
+            registrationSetupStatus = .success
+        } else if registrationSetupStatus != .success {
+            registrationSetupStatus = .waiting
+        }
+
+        if cameraPermissionConfirmed || cameraGranted {
+            cameraSetupStatus = .success
+        } else if cameraSetupStatus != .success {
+            cameraSetupStatus = .waiting
+        }
     }
 
     private func installForegroundObserver() {
         guard foregroundObserver == nil else { return }
         foregroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                await self?.onAppBecameActive()
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
@@ -92,6 +173,11 @@ final class WearablesManager: ObservableObject {
                 for await state in self.sdk.registrationStateStream() {
                     await MainActor.run {
                         self.applyRegistrationState(state)
+                        self.refreshSetupProgress()
+                        if state == .registered {
+                            self.registrationOpenedAt = nil
+                            Task { await self.validateCameraPermissionFlag() }
+                        }
                     }
                 }
             },
@@ -200,6 +286,7 @@ final class WearablesManager: ObservableObject {
         enableCameraStep()
         registrationLabel = "Registered with Meta AI."
         cameraLabel = cameraGranted ? "Successful" : "Waiting for approval..."
+        registrationSetupStatus = .success
     }
 
     private func confirmCameraPermission() {
@@ -208,6 +295,7 @@ final class WearablesManager: ObservableObject {
         cameraGranted = true
         cameraLabel = "Successful"
         canRequestCamera = true
+        cameraSetupStatus = .success
     }
 
     func userConfirmMetaConnected() {
@@ -253,9 +341,9 @@ final class WearablesManager: ObservableObject {
             } catch RegistrationError.alreadyRegistered {
                 registrationOpenedAt = nil
                 registrationLabel = "Registered with Meta AI."
-                if await waitForRegistrationReady(timeoutSeconds: 5) {
-                    applyRegistrationState(sdk.registrationState)
-                }
+                _ = await waitForRegistrationReady(timeoutSeconds: 10)
+                applyRegistrationState(sdk.registrationState)
+                refreshSetupProgress()
                 unlockCameraStepIfNeeded()
             } catch {
                 registrationLabel = "Registration unavailable. Check Meta AI and Developer Mode."
@@ -304,53 +392,107 @@ final class WearablesManager: ObservableObject {
         unlockCameraStepIfNeeded()
     }
 
-    func handleCallback(_ url: URL) async {
-        NSLog("ViewCaster: handleCallback \(url.absoluteString)")
-        lastMetaCallback = url.absoluteString
-        do {
-            let handled = try await sdk.handleUrl(url)
-            if handled {
-                registrationOpenedAt = nil
-            }
-            applyRegistrationState(sdk.registrationState)
-            if await waitForRegistrationReady(timeoutSeconds: 10) {
-                registrationOpenedAt = nil
-                applyRegistrationState(sdk.registrationState)
-            }
-        } catch {
-            registrationLabel = "Meta callback error: \(error.localizedDescription)"
-            lastMetaSyncNote = "Callback error: \(error.localizedDescription)"
-        }
-        try? await Task.sleep(nanoseconds: 1_500_000_000)
-        await finishPendingCameraPermissionIfPossible()
-        _ = await resolveCameraPermissionIfAlreadyGranted()
-        await syncMetaStatus()
-    }
-
     func refreshAfterForeground() async {
         await onAppBecameActive()
     }
 
     func onAppBecameActive() async {
-        unlockCameraStepIfNeeded()
+        foregroundSyncTask?.cancel()
+        foregroundSyncTask = Task { @MainActor in
+            unlockCameraStepIfNeeded()
+            _ = await ensureRegistrationComplete()
+            refreshSetupProgress()
 
-        let timeout: TimeInterval = registrationOpenedAt == nil ? 2 : 10
+            if pendingCameraPermissionRetry {
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                await finishPendingCameraPermissionIfPossible()
+            } else {
+                _ = await resolveCameraPermissionIfAlreadyGranted()
+            }
+
+            await validateCameraPermissionFlag()
+            await syncMetaStatus()
+            refreshSetupProgress()
+        }
+        await foregroundSyncTask?.value
+    }
+
+    @discardableResult
+    private func ensureRegistrationComplete() async -> Bool {
+        applyRegistrationState(sdk.registrationState)
+        if isRegistrationReady(sdk.registrationState) {
+            registrationOpenedAt = nil
+            refreshSetupProgress()
+            return true
+        }
+
+        if sdk.registrationState == .registering {
+            registrationLabel = "Finishing Meta AI registration..."
+            if await waitForRegistrationReady(timeoutSeconds: 15) {
+                registrationOpenedAt = nil
+                refreshSetupProgress()
+                return true
+            }
+        }
+
+        let timeout: TimeInterval = (registrationOpenedAt != nil || registrationAttempted) ? 10 : 3
         if await waitForRegistrationReady(timeoutSeconds: timeout) {
             registrationOpenedAt = nil
-            applyRegistrationState(sdk.registrationState)
-        } else if sdk.registrationState == .registering {
-            _ = await waitForRegistrationReady(timeoutSeconds: 15)
-            applyRegistrationState(sdk.registrationState)
+            refreshSetupProgress()
+            return true
         }
 
-        if pendingCameraPermissionRetry {
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            await finishPendingCameraPermissionIfPossible()
-        } else {
-            _ = await resolveCameraPermissionIfAlreadyGranted()
+        let currentState = sdk.registrationState
+        if currentState == .available, registrationAttempted || metaSetupStarted {
+            do {
+                try await sdk.startRegistration()
+                registrationLabel = "Complete registration in Meta AI, then return here."
+            } catch RegistrationError.alreadyRegistered {
+                if await waitForRegistrationReady(timeoutSeconds: 10) {
+                    registrationOpenedAt = nil
+                    refreshSetupProgress()
+                    return true
+                }
+            } catch {
+                if isRegistrationReady(sdk.registrationState) {
+                    refreshSetupProgress()
+                    return true
+                }
+            }
         }
 
-        await syncMetaStatus()
+        if await waitForRegistrationReady(timeoutSeconds: 8) {
+            registrationOpenedAt = nil
+            refreshSetupProgress()
+            return true
+        }
+
+        refreshSetupProgress()
+        return isRegistrationReady(sdk.registrationState)
+    }
+
+    private func validateCameraPermissionFlag() async {
+        guard cameraPermissionConfirmed else {
+            if cameraSetupStatus != .success {
+                cameraSetupStatus = .waiting
+            }
+            return
+        }
+
+        guard let status = await safeCameraPermissionStatus() else { return }
+
+        if status == .granted {
+            confirmCameraPermission()
+            return
+        }
+
+        if cameraSetupStatus == .success {
+            UserDefaults.standard.set(false, forKey: Self.cameraConfirmedKey)
+            cameraPermissionConfirmed = false
+            cameraGranted = false
+            cameraSetupStatus = .waiting
+            cameraLabel = "Waiting for approval..."
+        }
     }
 
     private func isRegistrationReady(_ state: RegistrationState) -> Bool {
@@ -444,15 +586,10 @@ final class WearablesManager: ObservableObject {
     }
 
     func requestGlassesCamera() async {
-        if !sdkRegistered {
-            if sdk.registrationState == .registering {
-                _ = await waitForRegistrationReady(timeoutSeconds: 15)
-            } else {
-                _ = await waitForRegistrationReady(timeoutSeconds: 3)
-            }
-            applyRegistrationState(sdk.registrationState)
+        if registrationSetupStatus != .success {
+            _ = await ensureRegistrationComplete()
         }
-        if !sdkRegistered {
+        if registrationSetupStatus != .success {
             cameraLabel = "Register with Meta AI first."
             return
         }

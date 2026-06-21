@@ -294,24 +294,24 @@ struct ContentView: View {
 
                         MetaSetupStepView(
                             title: "Register with Meta AI",
-                            statusLabel: model.wearables.sdkRegistered ? "Successful" : "Waiting for connection...",
-                            isSuccess: model.wearables.sdkRegistered,
+                            statusLabel: model.wearables.registrationSetupStatus == .success ? "Successful" : "Waiting for connection...",
+                            isSuccess: model.wearables.registrationSetupStatus == .success,
                             buttonTitle: "Register With Meta AI",
                             buttonIcon: "link",
                             hint: "Complete registration in Meta AI, then return here. Next unlocks when connected.",
-                            disabled: model.wearables.sdkRegistered || model.metaBlocked
+                            disabled: model.wearables.registrationSetupStatus == .success || model.metaBlocked
                         ) {
                             model.connectMetaAI()
                         }
 
                         MetaSetupStepView(
                             title: "Allow Camera",
-                            statusLabel: model.wearables.cameraGranted ? "Successful" : "Waiting for approval...",
-                            isSuccess: model.wearables.cameraGranted,
+                            statusLabel: model.wearables.cameraSetupStatus == .success ? "Successful" : "Waiting for approval...",
+                            isSuccess: model.wearables.cameraSetupStatus == .success,
                             buttonTitle: "Allow Camera",
                             buttonIcon: "camera.badge.ellipsis",
                             hint: "Approve camera access in Meta AI, then return here. Next unlocks when allowed.",
-                            disabled: model.metaBlocked || model.wearables.cameraGranted
+                            disabled: model.metaBlocked || model.wearables.cameraSetupStatus == .success
                         ) {
                             model.allowGlassesCamera()
                         }
