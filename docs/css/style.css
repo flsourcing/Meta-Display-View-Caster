@@ -684,11 +684,24 @@ body.glasses .glasses-stream-btn:focus {
   color: var(--text);
 }
 
-.chat-message-gif {
+.chat-message-gif,
+.chat-message-image {
   display: block;
   max-width: min(100%, 220px);
   border-radius: 8px;
   margin-top: 0.25rem;
+}
+
+.visually-hidden-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .chat-form {
@@ -757,6 +770,44 @@ body.glasses .glasses-stream-btn:focus {
   width: auto;
   margin-top: 0;
   flex-shrink: 0;
+}
+
+.emoji-panel {
+  margin-bottom: 0.65rem;
+  padding: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--code-bg);
+}
+
+.emoji-panel-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 0 0 0.5rem;
+}
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 0.2rem;
+  max-height: 10rem;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.emoji-preset-btn {
+  border: none;
+  background: transparent;
+  font-size: 1.35rem;
+  cursor: pointer;
+  padding: 0.35rem;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+.emoji-preset-btn:hover,
+.emoji-preset-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .chat-empty {

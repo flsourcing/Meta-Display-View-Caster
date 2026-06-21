@@ -10,6 +10,7 @@ const RELAY_GRACE_MS = 900_000;
 const VIEWER_PASSWORD = process.env.VIEWER_PASSWORD || 'Wedding';
 const PUBLIC_LOBBY_ID = 'public-cast';
 const CHAT_HISTORY_LIMIT = 100;
+const CHAT_IMAGE_MAX_CHARS = 600_000;
 
 function passwordsMatch(input, expected) {
   return String(input || '').trim().toLowerCase() === String(expected || '').trim().toLowerCase();
@@ -476,19 +477,25 @@ wss.on('connection', (ws) => {
           return;
         }
         const text = String(msg.text || '').trim().slice(0, 500);
-        const kind = msg.kind === 'gif' ? 'gif' : 'text';
+        const kind = msg.kind === 'gif' ? 'gif' : msg.kind === 'image' ? 'image' : 'text';
         const gifUrl = kind === 'gif' ? String(msg.gifUrl || msg.text || '').trim().slice(0, 500) : '';
+        const imageUrl = kind === 'image' ? String(msg.imageUrl || '').trim() : '';
         if (kind === 'text' && !text) return;
         if (kind === 'gif' && !gifUrl) return;
+        if (kind === 'image') {
+          if (!imageUrl.startsWith('data:image/')) return;
+          if (imageUrl.length > CHAT_IMAGE_MAX_CHARS) return;
+        }
         const viewer = session.viewers.get(activeViewerId);
         const payload = {
           type: 'chat-message',
           id: randomUUID(),
           viewerId: activeViewerId,
           name: viewer?.name || 'Guest',
-          text: kind === 'gif' ? gifUrl : text,
+          text: kind === 'gif' ? gifUrl : kind === 'image' ? '[photo]' : text,
           kind,
           gifUrl: kind === 'gif' ? gifUrl : undefined,
+          imageUrl: kind === 'image' ? imageUrl : undefined,
           at: Date.now(),
         };
         pushChatMessage(session, payload);

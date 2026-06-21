@@ -58,7 +58,37 @@
     gifPresets: document.getElementById('gif-presets'),
     gifUrlInput: document.getElementById('gif-url-input'),
     gifUrlSend: document.getElementById('gif-url-send'),
+    emojiBtn: document.getElementById('emoji-btn'),
+    emojiPanel: document.getElementById('emoji-panel'),
+    emojiGrid: document.getElementById('emoji-grid'),
+    photoBtn: document.getElementById('photo-btn'),
+    photoInput: document.getElementById('photo-input'),
   };
+
+  const CHAT_IMAGE_MAX_CHARS = 600000;
+
+  const EMOJI_LIST = [
+    '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃',
+    '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙',
+    '🥲', '😋', '😛', '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🤫',
+    '🤔', '🤐', '🤨', '😐', '😑', '😶', '😏', '😒', '🙄', '😬',
+    '😌', '😔', '😪', '🤤', '😴', '😷', '🤒', '🤕', '🤢', '🤮',
+    '🥳', '😎', '🤓', '🧐', '😕', '😟', '🙁', '😮', '😯', '😲',
+    '😳', '🥺', '😦', '😧', '😨', '😰', '😥', '😢', '😭', '😱',
+    '😖', '😣', '😞', '😓', '😩', '😫', '🥱', '😤', '😡', '😠',
+    '🤬', '😈', '👿', '💀', '☠️', '💩', '🤡', '👹', '👺', '👻',
+    '👽', '👾', '🤖', '😺', '😸', '😹', '😻', '😼', '😽', '🙀',
+    '😿', '😾', '🙈', '🙉', '🙊', '💋', '💌', '💘', '💝', '💖',
+    '💗', '💓', '💞', '💕', '💟', '❣️', '💔', '❤️', '🧡', '💛',
+    '💚', '💙', '💜', '🖤', '🤍', '🤎', '💯', '💢', '💥', '💫',
+    '💦', '💨', '🕳️', '💣', '💬', '👁️‍🗨️', '🗨️', '🗯️', '💭', '💤',
+    '👋', '🤚', '🖐️', '✋', '🖖', '👌', '🤌', '🤏', '✌️', '🤞',
+    '🤟', '🤘', '🤙', '👈', '👉', '👆', '🖕', '👇', '☝️', '👍',
+    '👎', '✊', '👊', '🤛', '🤜', '👏', '🙌', '👐', '🤲', '🤝',
+    '🙏', '✍️', '💅', '🤳', '💪', '🦾', '🦿', '🦵', '🦶', '👂',
+    '🎉', '🎊', '🎈', '🎁', '🎀', '🎂', '🍰', '🥂', '🍾', '🥳',
+    '✨', '⭐', '🌟', '💫', '🔥', '👀', '🙏', '🫶', '🤍', '💍',
+  ];
 
   const GIF_PRESETS = [
     { url: 'https://media.giphy.com/media/ICOgCUypo64o/giphy.gif', label: 'Celebrate' },
@@ -199,6 +229,13 @@
       img.alt = 'GIF';
       img.loading = 'lazy';
       item.append(name, img);
+    } else if (msg.kind === 'image' && (msg.imageUrl || msg.text)) {
+      const img = document.createElement('img');
+      img.className = 'chat-message-image';
+      img.src = msg.imageUrl || msg.text;
+      img.alt = 'Photo';
+      img.loading = 'lazy';
+      item.append(name, img);
     } else {
       const text = document.createElement('span');
       text.className = 'chat-message-text';
@@ -229,8 +266,76 @@
     const url = String(gifUrl || '').trim();
     if (!url || !ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'chat-message', kind: 'gif', gifUrl: url }));
-    els.gifPanel?.classList.add('hidden');
+    hideChatPickers();
     els.gifUrlInput.value = '';
+  }
+
+  function sendChatEmoji(emoji) {
+    const value = String(emoji || '').trim();
+    if (!value || !ws || ws.readyState !== WebSocket.OPEN) return;
+    sendChatMessage(value);
+    hideChatPickers();
+  }
+
+  function sendChatImage(imageUrl) {
+    const url = String(imageUrl || '').trim();
+    if (!url || !ws || ws.readyState !== WebSocket.OPEN) return;
+    if (url.length > CHAT_IMAGE_MAX_CHARS) {
+      window.alert('That photo is too large. Try a smaller image.');
+      return;
+    }
+    ws.send(JSON.stringify({ type: 'chat-message', kind: 'image', imageUrl: url }));
+    hideChatPickers();
+  }
+
+  async function compressImageFile(file) {
+    if (!file || !String(file.type || '').startsWith('image/')) {
+      throw new Error('Choose a photo to upload.');
+    }
+    const bitmap = await createImageBitmap(file);
+    const maxWidth = 1280;
+    let width = bitmap.width;
+    let height = bitmap.height;
+    if (width > maxWidth) {
+      height = Math.round(height * (maxWidth / width));
+      width = maxWidth;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      bitmap.close();
+      throw new Error('Could not process that photo.');
+    }
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+
+    let quality = 0.88;
+    let dataUrl = canvas.toDataURL('image/jpeg', quality);
+    while (dataUrl.length > CHAT_IMAGE_MAX_CHARS && quality > 0.35) {
+      quality -= 0.08;
+      dataUrl = canvas.toDataURL('image/jpeg', quality);
+    }
+    if (dataUrl.length > CHAT_IMAGE_MAX_CHARS) {
+      throw new Error('That photo is too large. Try a smaller image.');
+    }
+    return dataUrl;
+  }
+
+  async function handlePhotoSelected(file) {
+    if (!file) return;
+    try {
+      const dataUrl = await compressImageFile(file);
+      sendChatImage(dataUrl);
+    } catch (err) {
+      window.alert(err.message || 'Could not send that photo.');
+    }
+  }
+
+  function hideChatPickers(except = null) {
+    if (except !== 'gif') els.gifPanel?.classList.add('hidden');
+    if (except !== 'emoji') els.emojiPanel?.classList.add('hidden');
   }
 
   function requestViewerOffer() {
@@ -390,6 +495,20 @@
       btn.appendChild(img);
       btn.addEventListener('click', () => sendChatGif(preset.url));
       els.gifPresets.appendChild(btn);
+    }
+  }
+
+  function initEmojiPicker() {
+    if (!els.emojiGrid) return;
+    els.emojiGrid.innerHTML = '';
+    for (const emoji of EMOJI_LIST) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'emoji-preset-btn';
+      btn.textContent = emoji;
+      btn.title = emoji;
+      btn.addEventListener('click', () => sendChatEmoji(emoji));
+      els.emojiGrid.appendChild(btn);
     }
   }
 
@@ -731,10 +850,31 @@
   });
 
   els.gifBtn?.addEventListener('click', () => {
-    els.gifPanel?.classList.toggle('hidden');
-    if (!els.gifPanel?.classList.contains('hidden')) {
+    const opening = els.gifPanel?.classList.contains('hidden');
+    hideChatPickers(opening ? 'gif' : null);
+    if (opening) {
+      els.gifPanel?.classList.remove('hidden');
       els.gifUrlInput?.focus();
     }
+  });
+
+  els.emojiBtn?.addEventListener('click', () => {
+    const opening = els.emojiPanel?.classList.contains('hidden');
+    hideChatPickers(opening ? 'emoji' : null);
+    if (opening) {
+      els.emojiPanel?.classList.remove('hidden');
+    }
+  });
+
+  els.photoBtn?.addEventListener('click', () => {
+    hideChatPickers();
+    els.photoInput?.click();
+  });
+
+  els.photoInput?.addEventListener('change', () => {
+    const file = els.photoInput?.files?.[0];
+    if (els.photoInput) els.photoInput.value = '';
+    handlePhotoSelected(file);
   });
 
   els.gifUrlSend?.addEventListener('click', () => {
@@ -776,6 +916,7 @@
   }
 
   initGifPresets();
+  initEmojiPicker();
   updateMuteButton();
 
   els.chatForm?.addEventListener('submit', (e) => {

@@ -21,11 +21,14 @@ struct CastChatMessage: Identifiable, Equatable {
     let text: String
     let kind: String
     let gifUrl: String?
+    let imageUrl: String?
 
     var isGif: Bool { kind == "gif" }
+    var isImage: Bool { kind == "image" }
 
     var previewText: String {
         if isGif { return "Sent a GIF" }
+        if isImage { return "Sent a photo" }
         return text
     }
 }
@@ -271,13 +274,15 @@ final class SignalingClient: ObservableObject {
         let kind = json["kind"] as? String ?? "text"
         let text = json["text"] as? String ?? ""
         let gifUrl = json["gifUrl"] as? String
+        let imageUrl = json["imageUrl"] as? String
         return CastChatMessage(
             id: id,
             viewerId: viewerId,
             name: name,
             text: text,
             kind: kind,
-            gifUrl: gifUrl
+            gifUrl: gifUrl,
+            imageUrl: imageUrl
         )
     }
 
