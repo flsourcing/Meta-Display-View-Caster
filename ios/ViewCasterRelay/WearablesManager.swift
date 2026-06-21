@@ -358,39 +358,20 @@ final class WearablesManager: ObservableObject {
     }
 
     private func waitForRegistrationReady(timeoutSeconds: TimeInterval) async -> Bool {
+        applyRegistrationState(sdk.registrationState)
         if isRegistrationReady(sdk.registrationState) {
             return true
         }
 
-        return await withTaskGroup(of: Bool.self) { group in
-            group.addTask { @MainActor [weak self] in
-                guard let self else { return false }
-                for await state in self.sdk.registrationStateStream() {
-                    if self.isRegistrationReady(state) {
-                        self.applyRegistrationState(state)
-                        return true
-                    }
-                }
-                return false
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            applyRegistrationState(sdk.registrationState)
+            if isRegistrationReady(sdk.registrationState) {
+                return true
             }
-
-            group.addTask { @MainActor [weak self] in
-                guard let self else { return false }
-                let deadline = Date().addingTimeInterval(timeoutSeconds)
-                while Date() < deadline {
-                    self.applyRegistrationState(self.sdk.registrationState)
-                    if self.isRegistrationReady(self.sdk.registrationState) {
-                        return true
-                    }
-                    try? await Task.sleep(nanoseconds: 250_000_000)
-                }
-                return self.isRegistrationReady(self.sdk.registrationState)
-            }
-
-            let first = await group.next() ?? false
-            group.cancelAll()
-            return first
         }
+        return isRegistrationReady(sdk.registrationState)
     }
 
     private func safeCameraPermissionStatus() async -> PermissionStatus? {
