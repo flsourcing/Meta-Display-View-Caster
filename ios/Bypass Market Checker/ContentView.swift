@@ -4599,7 +4599,7 @@ final class CompanionViewModel: ObservableObject {
             wearablesStatus = isLiveCasting ? "Live cast active" : "Glasses ready for capture."
             glassesPreparedForCast = true
         } else if isMobileSetupComplete, UserDefaults.standard.bool(forKey: cameraPermissionConfirmedKey) {
-            wearablesStatus = "Tap Prepare Glasses — keep Meta AI open on phone."
+            wearablesStatus = "Tap Start Live Cast — keep Meta AI open on phone."
             glassesPreparedForCast = false
         } else if UserDefaults.standard.bool(forKey: cameraPermissionConfirmedKey) {
             wearablesStatus = "Camera access approved."
@@ -5106,28 +5106,6 @@ final class CompanionViewModel: ObservableObject {
         endLiveCast()
         relaySignaling?.disconnectAndClearSession()
         startCastRelayIfNeeded()
-    }
-
-    func prepareGlassesForCast() async {
-        isBusy = true
-        defer { isBusy = false }
-
-        configureCastRelay()
-        wearablesStatus = "Preparing glasses — same path as image lookup…"
-        relaySignaling?.status = "Preparing glasses…"
-        startActiveDeviceMonitoring()
-        beginGlassesConnectionSetup(showStatus: true)
-
-        let ready = await ensureReadyDeviceSession(showStatus: true, timeoutSeconds: 60)
-        glassesPreparedForCast = ready
-        if ready {
-            relaySignaling?.status = "Glasses ready — tap Start Live Cast"
-            showMessage("Glasses ready. Live Stream on glasses or Start Live Cast here.")
-        } else {
-            relaySignaling?.status = "Glasses not ready — tap Prepare Glasses"
-            showError("Could not connect to glasses. Keep View Caster open, then tap Prepare Glasses again.")
-        }
-        updateReadyWearablesStatus()
     }
 
     func handleCastStartFromGlasses() async {

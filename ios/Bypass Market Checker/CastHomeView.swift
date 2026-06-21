@@ -38,15 +38,6 @@ struct CastHomeView: View {
 
             viewersPanel
 
-            Button {
-                Task { await viewModel.prepareGlassesForCast() }
-            } label: {
-                Label("Prepare Glasses", systemImage: "eyeglasses")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(SecondaryButtonStyle())
-            .disabled(viewModel.isBusy || viewModel.isLiveCasting)
-
             if viewModel.isLiveCasting {
                 Button {
                     viewModel.userStopLiveCast()
@@ -104,10 +95,6 @@ struct CastHomeView: View {
             }
             .padding(12)
             .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-
-            Text("1. Tap Prepare Glasses\n2. Keep View Caster open on phone\n3. On glasses: open View Caster → Live Stream\n4. Guests: open viewer URL → password Wedding → enter name\n5. Live Stream starts camera + mic → viewers see and hear it live\n6. Tap Stop Live Cast when done")
-                .font(.footnote)
-                .foregroundStyle(.white.opacity(0.65))
         }
         .cardStyle()
         .onAppear {
