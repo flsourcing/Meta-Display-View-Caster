@@ -157,10 +157,30 @@ struct CastHomeView: View {
                                     Text(message.name)
                                         .font(.caption.weight(.semibold))
                                         .foregroundStyle(.white.opacity(0.9))
-                                    Text(message.previewText)
-                                        .font(.caption)
-                                        .foregroundStyle(.white.opacity(0.7))
-                                        .lineLimit(2)
+                                    if message.isImage, let urlString = message.imageUrl, let url = URL(string: urlString) {
+                                        AsyncImage(url: url) { phase in
+                                            switch phase {
+                                            case .success(let image):
+                                                image
+                                                    .resizable()
+                                                    .scaledToFill()
+                                            case .failure:
+                                                Text("Sent a photo")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.white.opacity(0.7))
+                                            default:
+                                                ProgressView()
+                                                    .controlSize(.small)
+                                            }
+                                        }
+                                        .frame(width: 56, height: 56)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    } else {
+                                        Text(message.previewText)
+                                            .font(.caption)
+                                            .foregroundStyle(.white.opacity(0.7))
+                                            .lineLimit(2)
+                                    }
                                 }
                                 Spacer(minLength: 8)
                                 Button {

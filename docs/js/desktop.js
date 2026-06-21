@@ -68,7 +68,6 @@
   };
 
   const CHAT_IMAGE_MAX_CHARS = 600000;
-  const CHAT_IMAGE_UPLOAD_MAX = 1800000;
 
   const EMOJI_LIST = [
     '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃',
@@ -325,9 +324,13 @@
     if (!isImageFile(file)) {
       throw new Error('Choose a photo to upload.');
     }
+    if (file.type === 'image/jpeg' && file.size > 0 && file.size <= 900000) {
+      return file;
+    }
     const { draw, cleanup } = await loadImageSource(file);
     try {
-      const maxWidth = 1024;
+      const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '');
+      const maxWidth = mobile ? 800 : 1024;
       let width = draw.width;
       let height = draw.height;
       if (!width || !height) {
@@ -346,38 +349,65 @@
       }
       ctx.drawImage(draw, 0, 0, width, height);
 
-      let quality = 0.82;
-      let dataUrl = canvas.toDataURL('image/jpeg', quality);
-      while (dataUrl.length > CHAT_IMAGE_UPLOAD_MAX && quality > 0.35) {
-        quality -= 0.08;
-        dataUrl = canvas.toDataURL('image/jpeg', quality);
-      }
-      if (dataUrl.length > CHAT_IMAGE_UPLOAD_MAX) {
-        throw new Error('That photo is too large. Try a smaller image.');
-      }
-      return dataUrl;
+      const blob = await new Promise((resolve, reject) => {
+        let quality = mobile ? 0.72 : 0.82;
+        const tryBlob = () => {
+          canvas.toBlob((result) => {
+            if (!result) {
+              reject(new Error('Could not process that photo.'));
+              return;
+            }
+            if (result.size > 900000 && quality > 0.35) {
+              quality -= 0.08;
+              tryBlob();
+              return;
+            }
+            if (result.size > 900000) {
+              reject(new Error('That photo is too large. Try a smaller image.'));
+              return;
+            }
+            resolve(result);
+          }, 'image/jpeg', quality);
+        };
+        tryBlob();
+      });
+      return blob;
     } finally {
       cleanup();
     }
   }
 
-  async function uploadChatImage(dataUrl) {
+  async function uploadChatImage(blobOrDataUrl) {
     const base = window.CasterWS?.httpBase?.();
     if (!base) {
       throw new Error('Signaling server not configured.');
     }
     await window.CasterWS.wakeServer?.().catch(() => {});
-    const res = await fetch(`${base}/chat-image`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: dataUrl }),
-      mode: 'cors',
-      cache: 'no-store',
-    });
+
+    let res;
+    if (blobOrDataUrl instanceof Blob) {
+      res = await fetch(`${base}/chat-image`, {
+        method: 'POST',
+        headers: { 'Content-Type': blobOrDataUrl.type || 'image/jpeg' },
+        body: blobOrDataUrl,
+        mode: 'cors',
+        cache: 'no-store',
+      });
+    } else {
+      res = await fetch(`${base}/chat-image`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: blobOrDataUrl }),
+        mode: 'cors',
+        cache: 'no-store',
+      });
+    }
+
     let payload = {};
     try { payload = await res.json(); } catch { /* ignore */ }
     if (!res.ok) {
-      throw new Error(payload.error || 'Could not upload photo.');
+      const detail = payload.error || `Upload failed (${res.status}).`;
+      throw new Error(detail);
     }
     if (!payload.url) {
       throw new Error('Photo upload failed.');
@@ -387,12 +417,19 @@
 
   async function handlePhotoSelected(file) {
     if (!file) return;
+    hideChatToolsMenu();
+    hideChatPickers();
     try {
-      const dataUrl = await compressImageFile(file);
-      const imageUrl = await uploadChatImage(dataUrl);
+      const prepared = await compressImageFile(file);
+      const imageUrl = await uploadChatImage(prepared);
       sendChatImage(imageUrl);
     } catch (err) {
-      window.alert(err.message || 'Could not send that photo.');
+      const msg = err?.message || 'Could not send that photo.';
+      if (msg.includes('Load failed') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+        window.alert('Could not reach the upload server. Redeploy Render, then try again.');
+      } else {
+        window.alert(msg);
+      }
     }
   }
 
@@ -967,17 +1004,14 @@
     }
   });
 
-  els.photoBtn?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    hideChatToolsMenu();
-    hideChatPickers();
-    els.photoInput?.click();
-  });
-
   els.photoInput?.addEventListener('change', () => {
     const file = els.photoInput?.files?.[0];
     if (els.photoInput) els.photoInput.value = '';
     handlePhotoSelected(file);
+  });
+
+  els.photoBtn?.addEventListener('click', () => {
+    hideChatToolsMenu();
   });
 
   els.gifUrlSend?.addEventListener('click', () => {

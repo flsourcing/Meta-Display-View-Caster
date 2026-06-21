@@ -46,7 +46,7 @@ function passwordsMatch(input, expected) {
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 
 /** @type {Map<string, object>} */
 const sessions = new Map();
@@ -335,8 +335,24 @@ app.get('/live-status', (_req, res) => {
   });
 });
 
-app.post('/chat-image', express.json({ limit: '2mb' }), (req, res) => {
-  const dataUrl = String(req.body?.image || '').trim();
+app.post('/chat-image', (req, res, next) => {
+  const contentType = String(req.headers['content-type'] || '').toLowerCase();
+  if (contentType.startsWith('image/')) {
+    return express.raw({ type: () => true, limit: '2mb' })(req, res, next);
+  }
+  return express.json({ limit: '2mb' })(req, res, next);
+}, (req, res) => {
+  let dataUrl = '';
+  if (Buffer.isBuffer(req.body) && req.body.length) {
+    const mime = String(req.headers['content-type'] || 'image/jpeg').split(';')[0].trim();
+    if (!mime.startsWith('image/')) {
+      res.status(400).json({ error: 'Invalid photo format.' });
+      return;
+    }
+    dataUrl = `data:${mime};base64,${req.body.toString('base64')}`;
+  } else {
+    dataUrl = String(req.body?.image || '').trim();
+  }
   if (!dataUrl.startsWith('data:image/')) {
     res.status(400).json({ error: 'Invalid photo format.' });
     return;

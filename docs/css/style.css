@@ -759,6 +759,7 @@ body.glasses .glasses-stream-btn:focus {
   font-size: 0.9rem;
   text-align: left;
   cursor: pointer;
+  display: block;
 }
 
 .chat-tools-item:hover,
