@@ -32,7 +32,6 @@ struct CastChatMessage: Identifiable, Equatable {
 
 @MainActor
 final class SignalingClient: ObservableObject {
-    @Published var code = "------"
     @Published var status = "Offline"
     @Published var connected = false
     @Published var desktopLinked = false
@@ -182,7 +181,6 @@ final class SignalingClient: ObservableObject {
     private func connectAsync() async {
         closeSocket()
         connected = false
-        code = "------"
         status = "Connecting…"
 
         _ = await wakeServer()
@@ -312,7 +310,7 @@ final class SignalingClient: ObservableObject {
 
     private func refreshViewerStatusText() {
         if viewerRoster.isEmpty {
-            status = glassesLinked ? "Glasses connected — waiting for viewers" : "Enter this code on desktop & glasses"
+            status = glassesLinked ? "Glasses connected — waiting for viewers" : "Ready — open viewer link or glasses app"
             return
         }
         let watching = viewerRoster.filter(\.isWatching).count
@@ -333,13 +331,12 @@ final class SignalingClient: ObservableObject {
 
         switch type {
         case "relay-registered", "code-rotated":
-            if let c = json["code"] as? String { code = c }
             if let sid = json["sessionId"] as? String { savedSessionId = sid }
             if let history = json["chatHistory"] as? [[String: Any]] {
                 applyChatHistory(history)
             }
             connected = true
-            status = "Enter this code on desktop & glasses"
+            status = "Ready — open viewer link or glasses app"
             registerTask?.cancel()
             registerTask = nil
             startPing()
@@ -347,35 +344,42 @@ final class SignalingClient: ObservableObject {
             status = json["message"] as? String ?? "Relay paused — keep app open"
         case "relay-online":
             connected = true
-            if let c = json["code"] as? String { code = c }
             status = "Phone relay back online"
         case "desktop-joined":
             desktopLinked = true
             status = "Viewer connected"
             onDesktopJoined?()
         case "viewer-joined":
-            if let vid = json["viewerId"] as? String {
-                if let viewers = json["viewers"] as? [[String: Any]] {
-                    applyViewerList(json)
-                } else {
-                    desktopLinked = true
-                    viewerCount = json["viewerCount"] as? Int ?? viewerCount + 1
-                    refreshViewerStatusText()
+            if json["viewers"] != nil {
+                applyViewerList(json)
+            } else if let vid = json["viewerId"] as? String {
+                let name = json["name"] as? String ?? "Guest"
+                let status = json["status"] as? String ?? "waiting"
+                if !viewerRoster.contains(where: { $0.id == vid }) {
+                    viewerRoster.append(ViewerPresence(id: vid, name: name, status: status))
+                    viewerRoster.sort {
+                        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                    }
                 }
+                viewerCount = viewerRoster.count
+                desktopLinked = viewerCount > 0
+                refreshViewerStatusText()
+            }
+            if let vid = json["viewerId"] as? String {
                 onViewerJoined?(vid)
             }
         case "viewer-list-updated":
             applyViewerList(json)
         case "viewer-left":
+            if json["viewers"] != nil {
+                applyViewerList(json)
+            } else if let vid = json["viewerId"] as? String {
+                viewerRoster.removeAll { $0.id == vid }
+                viewerCount = viewerRoster.count
+                desktopLinked = viewerCount > 0
+                refreshViewerStatusText()
+            }
             if let vid = json["viewerId"] as? String {
-                if let viewers = json["viewers"] as? [[String: Any]] {
-                    applyViewerList(json)
-                } else {
-                    viewerRoster.removeAll { $0.id == vid }
-                    viewerCount = max(0, json["viewerCount"] as? Int ?? viewerCount - 1)
-                    desktopLinked = viewerCount > 0
-                    refreshViewerStatusText()
-                }
                 onViewerLeft?(vid)
             }
         case "viewer-needs-offer":

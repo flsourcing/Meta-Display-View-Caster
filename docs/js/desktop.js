@@ -73,6 +73,13 @@
   let videoHealthTimer = null;
   let noVideoStreak = 0;
   let lastOfferAt = 0;
+  let restoreAttempted = false;
+
+  const SESSION_KEYS = {
+    auth: 'mdvc-viewer-auth',
+    name: 'mdvc-viewer-name',
+    joined: 'mdvc-viewer-joined',
+  };
 
   const params = new URLSearchParams(location.search);
   const urlPassword = params.get('password') || params.get('p') || '';
@@ -645,6 +652,7 @@
       await CasterWS.wakeServer?.().catch(() => {});
       const live = await CasterWS.fetchLiveStatus().catch(() => ({ relayOnline: false, streaming: false }));
       verifiedPassword = password;
+      try { sessionStorage.setItem(SESSION_KEYS.auth, password); } catch { /* ignore */ }
       showPasswordError('');
       if (!live.relayOnline) {
         setStatus('waiting', 'Password OK — join and wait for cast');
@@ -689,7 +697,10 @@
       ws = joined.ws;
       viewerId = joined.viewerId;
       viewerName = name;
-      try { sessionStorage.setItem('mdvc-viewer-name', name); } catch { /* ignore */ }
+      try {
+        sessionStorage.setItem(SESSION_KEYS.name, name);
+        sessionStorage.setItem(SESSION_KEYS.joined, '1');
+      } catch { /* ignore */ }
       bindWsMessages();
       connected = true;
       renderViewerRoster(joined.viewers);
@@ -766,6 +777,33 @@
     }
   });
 
+  async function tryRestoreSession() {
+    if (restoreAttempted || !useWS) return;
+    restoreAttempted = true;
+    try {
+      const savedAuth = sessionStorage.getItem(SESSION_KEYS.auth);
+      const savedName = sessionStorage.getItem(SESSION_KEYS.name);
+      if (!savedAuth || !passwordsMatch(savedAuth, defaultPassword)) return;
+
+      verifiedPassword = savedAuth;
+      if (savedName && els.usernameInput && !els.usernameInput.value) {
+        els.usernameInput.value = savedName;
+      }
+
+      const wasJoined = sessionStorage.getItem(SESSION_KEYS.joined) === '1';
+      if (wasJoined && savedName) {
+        setStatus('waiting', 'Welcome back — reconnecting…');
+        await joinWithUsername();
+        return;
+      }
+
+      showUsernameStep();
+      setStatus('waiting', 'Welcome back — enter your name to join');
+    } catch {
+      /* ignore restore errors */
+    }
+  }
+
   initGifPresets();
   updateMuteButton();
 
@@ -779,11 +817,17 @@
   });
 
   try {
-    const savedName = sessionStorage.getItem('mdvc-viewer-name');
+    const savedName = sessionStorage.getItem(SESSION_KEYS.name);
     if (savedName && els.usernameInput && !els.usernameInput.value) {
       els.usernameInput.value = savedName;
     }
   } catch { /* ignore */ }
 
-  setStatus('waiting', 'Enter password to continue');
+  const hasSavedAuth = (() => {
+    try { return !!sessionStorage.getItem(SESSION_KEYS.auth); } catch { return false; }
+  })();
+  if (!hasSavedAuth) {
+    setStatus('waiting', 'Enter password to continue');
+  }
+  tryRestoreSession().catch(() => {});
 })();

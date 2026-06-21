@@ -5108,11 +5108,6 @@ final class CompanionViewModel: ObservableObject {
         startCastRelayIfNeeded()
     }
 
-    func copyPairingCode() {
-        UIPasteboard.general.string = relaySignaling?.code ?? "------"
-        showMessage("Copied pairing code.")
-    }
-
     func prepareGlassesForCast() async {
         isBusy = true
         defer { isBusy = false }
@@ -5241,7 +5236,7 @@ final class CompanionViewModel: ObservableObject {
         Task { await stopCameraStreamOnly() }
         castWebRTC.stopStream()
         relaySignaling?.status = relaySignaling?.connected == true
-            ? "Enter this code on desktop & glasses"
+            ? "Ready — open viewer link or glasses app"
             : "Offline"
         updateReadyWearablesStatus()
     }

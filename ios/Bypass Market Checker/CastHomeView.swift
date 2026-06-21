@@ -9,16 +9,9 @@ struct CastHomeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Pairing code")
+            Text("View Caster")
                 .font(.title3.bold())
                 .foregroundStyle(.white)
-
-            Text(signaling.code)
-                .font(.system(size: 48, weight: .bold, design: .monospaced))
-                .tracking(6)
-                .foregroundStyle(.cyan)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 8)
 
             HStack(spacing: 8) {
                 Circle()
@@ -111,14 +104,6 @@ struct CastHomeView: View {
             }
             .padding(12)
             .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-
-            Button {
-                viewModel.copyPairingCode()
-            } label: {
-                Label("Copy pairing code", systemImage: "doc.on.doc")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(SecondaryButtonStyle())
 
             Text("1. Tap Prepare Glasses\n2. Keep View Caster open on phone\n3. On glasses: open View Caster → Live Stream\n4. Guests: open viewer URL → password Wedding → enter name\n5. Live Stream starts camera + mic → viewers see and hear it live\n6. Tap Stop Live Cast when done")
                 .font(.footnote)

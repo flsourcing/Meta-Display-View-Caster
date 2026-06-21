@@ -280,9 +280,15 @@ function attachGlassesToSession(ws, session) {
 function removeViewer(session, viewerId) {
   if (!viewerId) return;
   session.viewers.delete(viewerId);
+  const viewers = buildViewerList(session);
   broadcastViewerList(session);
   if (session.relayWs) {
-    send(session.relayWs, { type: 'viewer-left', viewerId, viewerCount: session.viewers.size });
+    send(session.relayWs, {
+      type: 'viewer-left',
+      viewerId,
+      viewerCount: session.viewers.size,
+      viewers,
+    });
   }
 }
 
