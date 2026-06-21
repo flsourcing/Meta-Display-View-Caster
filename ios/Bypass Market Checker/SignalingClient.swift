@@ -41,6 +41,8 @@ final class SignalingClient: ObservableObject {
     @Published var viewerRoster: [ViewerPresence] = []
     @Published var chatMessages: [CastChatMessage] = []
 
+    private var chatSyncGeneration = 0
+
     private var ws: URLSessionWebSocketTask?
     private var session: URLSession?
     private var serverURL: URL
@@ -115,6 +117,7 @@ final class SignalingClient: ObservableObject {
     }
 
     func clearLiveChat() {
+        chatSyncGeneration += 1
         sendSignal(type: "clear-chat")
         chatMessages = []
     }
@@ -125,7 +128,9 @@ final class SignalingClient: ObservableObject {
     }
 
     func syncChatHistory() {
-        sendSignal(type: "sync-chat")
+        chatSyncGeneration += 1
+        let generation = chatSyncGeneration
+        sendSignal(type: "sync-chat", payload: ["generation": generation])
     }
 
     func sendOffer(_ sdp: String, viewerId: String) {
@@ -278,7 +283,8 @@ final class SignalingClient: ObservableObject {
         )
     }
 
-    private func applyChatHistory(_ raw: [[String: Any]]) {
+    private func applyChatHistory(_ raw: [[String: Any]], generation: Int? = nil) {
+        if let generation, generation < chatSyncGeneration { return }
         chatMessages = raw.compactMap { parseChatMessage($0) }
     }
 
@@ -332,7 +338,6 @@ final class SignalingClient: ObservableObject {
             if let history = json["chatHistory"] as? [[String: Any]] {
                 applyChatHistory(history)
             }
-            syncChatHistory()
             connected = true
             status = "Enter this code on desktop & glasses"
             registerTask?.cancel()
@@ -380,10 +385,12 @@ final class SignalingClient: ObservableObject {
         case "chat-message":
             appendChatMessage(json)
         case "chat-cleared":
+            chatSyncGeneration += 1
             chatMessages = []
         case "chat-sync":
             if let history = json["messages"] as? [[String: Any]] {
-                applyChatHistory(history)
+                let generation = json["generation"] as? Int
+                applyChatHistory(history, generation: generation)
             }
         case "chat-message-deleted":
             if let id = json["id"] as? String {

@@ -158,6 +158,40 @@ function sessionForViewerJoin() {
   return findOrCreateLobbySession();
 }
 
+function clearAllChatHistory() {
+  for (const session of sessions.values()) {
+    session.chatHistory = [];
+  }
+}
+
+function broadcastChatCleared(originSession = null) {
+  const payload = { type: 'chat-cleared', at: Date.now() };
+  const sent = new Set();
+  for (const session of sessions.values()) {
+    for (const viewer of session.viewers.values()) {
+      const socket = viewerSocket(viewer);
+      if (socket && !sent.has(socket)) {
+        sent.add(socket);
+        send(socket, payload);
+      }
+    }
+    if (session.relayWs && !sent.has(session.relayWs)) {
+      sent.add(session.relayWs);
+      send(session.relayWs, payload);
+      send(session.relayWs, { type: 'chat-sync', messages: [] });
+    }
+    if (session.desktopWs && !sent.has(session.desktopWs)) {
+      sent.add(session.desktopWs);
+      send(session.desktopWs, payload);
+    }
+    if (session.glassesWs && !sent.has(session.glassesWs)) {
+      sent.add(session.glassesWs);
+      send(session.glassesWs, payload);
+    }
+  }
+  if (originSession) broadcast(originSession, payload);
+}
+
 function mergeStraySessionsIntoLobby(lobby) {
   if (!lobby.viewers) lobby.viewers = new Map();
   if (!lobby.chatHistory) lobby.chatHistory = [];
@@ -179,11 +213,7 @@ function mergeStraySessionsIntoLobby(lobby) {
       other.viewers.clear();
     }
     if (hasChat) {
-      lobby.chatHistory.push(...other.chatHistory);
       other.chatHistory = [];
-      if (lobby.chatHistory.length > CHAT_HISTORY_LIMIT) {
-        lobby.chatHistory.splice(0, lobby.chatHistory.length - CHAT_HISTORY_LIMIT);
-      }
     }
   }
 }
@@ -467,9 +497,11 @@ wss.on('connection', (ws) => {
         const activeRole = ws.castRole || role;
         const session = getSession(activeSessionId);
         if (!session || activeRole !== 'relay') break;
+        const generation = typeof msg.generation === 'number' ? msg.generation : undefined;
         send(ws, {
           type: 'chat-sync',
           messages: (session.chatHistory || []).slice(-50),
+          ...(generation !== undefined ? { generation } : {}),
         });
         break;
       }
@@ -494,8 +526,8 @@ wss.on('connection', (ws) => {
           send(ws, { type: 'error', message: 'Only the caster can clear chat.' });
           return;
         }
-        session.chatHistory = [];
-        broadcast(session, { type: 'chat-cleared' });
+        clearAllChatHistory();
+        broadcastChatCleared(session);
         break;
       }
 

@@ -127,7 +127,6 @@ struct CastHomeView: View {
         .cardStyle()
         .onAppear {
             viewModel.startCastCompanionBridge()
-            signaling.syncChatHistory()
         }
     }
 

@@ -438,6 +438,7 @@
       }
 
       if (msg.type === 'chat-cleared') {
+        chatSeen.clear();
         loadChatHistory([]);
       }
 
